@@ -1,0 +1,501 @@
+{
+    "data": {
+        "crypto": [
+            {
+                "category": "crypto", 
+                "description": "I fixed the mistake from last time, now it should be secure - right?", 
+                "files": [
+                    "/files/8912fe09469beb68602306dac880dde8/challenge.py?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjcxfQ.ZAOBqg.eC64bOehhrAK5yy5-KxF97alnVg"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 34, 
+                "name": "EasyOneTimePad", 
+                "points": 100, 
+                "service": "nc 3.120.132.103 13338", 
+                "solves": 54
+            }, 
+            {
+                "category": "crypto", 
+                "description": "I fell asleep in my abstract algebra class and dreamt of this weird hash function, so I decided to make a challenge with it. Can you solve it?", 
+                "files": [
+                    "/files/88758c4315bba7a2287acb7b50b693dd/challenge_file.py?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjQwfQ.ZAOBqQ.1kKPPx-_H7Pep-6VsXpbSiTXURU"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 33, 
+                "name": "DreamHash", 
+                "points": 995, 
+                "service": "nc 3.120.132.103 13341", 
+                "solves": 5
+            }, 
+            {
+                "category": "crypto", 
+                "description": "I read about how encryption with one-time pads is unbreakable, so no one will be able to solve this challenge.", 
+                "files": [
+                    "/files/b90cace71954c78f8123b78b42b2f6da/challenge_file.py?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjM3fQ.ZAOBqQ.bblJBVYsPs7vyt1VVCnrexrDJNs"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 30, 
+                "name": "BabyOneTimePad", 
+                "points": 100, 
+                "service": "nc 3.120.132.103 13337", 
+                "solves": 98
+            }, 
+            {
+                "category": "crypto", 
+                "description": "That feeling when you're sitting in the audience at your first eurocrypt, enjoying the best paper talk, and suddenly realise the speaker has broken a provably secure protocol you have implemented on your github :psyduck:", 
+                "files": [
+                    "/files/5f60d22b6ab15a1bf45e8cbaae91276d/ctfdhandout.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjM4fQ.ZAOBqg.ha5ZkMj4q1t7Xj4zvO_BNMKHgpQ"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 31, 
+                "name": "Blind Security", 
+                "points": 1000, 
+                "service": "nc 116.203.101.108 4343", 
+                "solves": 0
+            }, 
+            {
+                "category": "crypto", 
+                "description": "Shamir agreed to keep my flag secret for me in his stronghold.\r\nHe assured me that the adversary would never cross its threshold.\r\nBut the adversary commanded vast legions, and broke through to the threshold.\r\nThere remains only one defense against reconstruction.\r\nNote: This challenge requires some extended computation. Our (very unoptimised) solve script terminates in under 30 minutes :)", 
+                "files": [
+                    "/files/5b6ad05334f436f37e848582b1ab8445/handout.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjQyfQ.ZAOBqg.vwQZRhfWI6BoMbiEEBYGSzHiBVQ"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 35, 
+                "name": "Reconstruction", 
+                "points": 971, 
+                "service": [], 
+                "solves": 10
+            }, 
+            {
+                "category": "crypto", 
+                "description": "Telepound is our new proprietary zero-knowledge team collaboration SaaS solution\r\ndesigned by our crypto wizards here at Consolidated Kalmar International Telecommunications Solution Systems Limited.\r\nAs the modes of the business village shift in this unprecedented era of Arbitrary Intelligence (AI) and Buckschains,\r\nso must our means of humanoid communication. To meet these new cyberdemands of the corporate-tomorrow,\r\nTelepound deploys custom proven Ameliorated Encipherment Stuff (AES) encryption at all your favorite security levels,\r\nrequired for the interoperable synergetic modes of modern business.", 
+                "files": [
+                    "/files/de7a2f7052d29635400b59558fe75645/handout.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjQzfQ.ZAOBqg.g0Z_8KXwLHNPQHpo6dIC443Xh0c"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 36, 
+                "name": "Telepound", 
+                "points": 1000, 
+                "service": "nc 78.47.152.3 13337", 
+                "solves": 1
+            }, 
+            {
+                "category": "crypto", 
+                "description": "Zero-knowledge proofs are pretty dank bro,\r\nin early 90ties Goldwasser et al. showed that you prove every satisfied NP relation in ZK,\r\nin late 2010s blockchain people showed us this result extends to false NP instances.\r\nCool stuff.\r\n", 
+                "files": [
+                    "/files/1feed2126bbcdb1d445d490e6715b1b0/handout.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjc0fQ.ZAOBqw.da_OaVGuUFSUuNMg1fMalKwvoms"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 66, 
+                "name": "YoloProofs", 
+                "points": 1000, 
+                "service": "nc 195.201.98.174  13338", 
+                "solves": 1
+            }, 
+            {
+                "category": "crypto", 
+                "description": "I'll let you choose the curve if I can choose the generator 8). No choosing weak curves though!", 
+                "files": [
+                    "/files/5fba7f6e6d895cf080f6daadceea13d7/challenge.sage?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjczfQ.ZAOBqw.pRWDrVToBQyofylenvI8qjTdCbI"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 65, 
+                "name": "l33t-generator", 
+                "points": 1000, 
+                "service": "nc 195.201.98.174 13337", 
+                "solves": 2
+            }
+        ], 
+        "forensic": [
+            {
+                "category": "forensic", 
+                "description": "UDP - UNRELIABLE datagram protocol.", 
+                "files": [
+                    "/files/61f29195873d3c6ee63c19b7995c2dc4/swaal.pcap.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjQ3fQ.ZAOBqg.19cjW88Nf2NMwgviTY44FSUSLWs"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 40, 
+                "name": "sewing-waste-and-agriculture-leftovers", 
+                "points": 100, 
+                "service": [], 
+                "solves": 353
+            }, 
+            {
+                "category": "forensic", 
+                "description": "One of our users here at StupidCorp ran a malicious binary they were sent over an email. We made a process dump, and dumped the network logs. We think it is TinySHell, can you please help figuring out what happened?", 
+                "files": [
+                    "/files/2f25f31e2e706155d43be41122e3e71c/challenge.tar?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjQ2fQ.ZAOBqg.UJfb6WYmUWiYLCO_KtNlysd7q14"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 39, 
+                "name": "lleHSyniT!", 
+                "points": 971, 
+                "service": [], 
+                "solves": 10
+            }, 
+            {
+                "category": "forensic", 
+                "description": "Follow the shuffle.", 
+                "files": [
+                    "/files/13f9b60684b6288df6b3049c4516ca35/cards.pcap.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjQ0fQ.ZAOBqg.UGDom0u9thMxuz1-RKMfE7-9xaM"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 37, 
+                "name": "cards", 
+                "points": 100, 
+                "service": [], 
+                "solves": 119
+            }
+        ], 
+        "misc": [
+            {
+                "category": "misc", 
+                "description": "After finishing a 10 course meal at my grandparents house, I found this old piece of music, next to a small note with a weird table on it, I am clueless and tonedeaf, gimme a hand. (solution is understandable english and must be wrapped in the standard flag format before submitting)", 
+                "files": [
+                    "/files/369eccff2d17b88d6577579ac04f9de7/WeirdTable.png?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjUwfQ.ZAOBqg.dOS6nsTg2vy3JeAcLeMdjT5iEMQ", 
+                    "/files/eff0a54332e585d73781820616727640/FlagMusic.png?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjUxfQ.ZAOBqg.ZJauRIpRxJ-Zl6vKgVdWsqrWI0k"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 43, 
+                "name": "Renaissance Flag Music", 
+                "points": 1000, 
+                "service": [], 
+                "solves": 0
+            }, 
+            {
+                "category": "misc", 
+                "description": "I created my own magic wand using an Adafruit BNO055 Accelerometer! I wonder if people will be able to decipher what spells I cast?  (Note: readings were done 10 times per second)", 
+                "files": [
+                    "/files/18620dde2ab669cc84efc035c213ae02/kalmar-fun.txt?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjQ4fQ.ZAOBqQ.CAZfiUlhl4XRgCD2pM1Uxs7Js-E"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 41, 
+                "name": "kalmarunionen-fun", 
+                "points": 999, 
+                "service": [], 
+                "solves": 3
+            }, 
+            {
+                "category": "misc", 
+                "description": "Have you read the rules?", 
+                "files": [], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 59, 
+                "name": "Sanity Check", 
+                "points": 100, 
+                "service": [], 
+                "solves": 749
+            }
+        ], 
+        "pwn": [
+            {
+                "category": "pwn", 
+                "description": "It's all about infra and kalmar will be the new big cloud provider in town, Silicon valley here we go, TO THE MOOON!\r\n\r\nThis chall is HARD (I think).\r\nIt requires intel vt-x sorry if you're on amd. We have special infra for this chall and we will do our best to assist you if shit breaks.\r\nIf everything fails contact zanderdk and we may be able to provide you with a private instance for a suitable region.\r\nTimeout etc should not be a issue so contact if you have such problems.\r\n\r\nBest of luck Zander\r\n\r\nHint: Wonder if vmcall instructions is of any danger, probably not lest enable it\r\n\r\nhttps://i.imgur.com/e1YBgDD.png\r\n", 
+                "files": [
+                    "/files/8594e6cf55c40afe92ca745911c334bf/handout.tar.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjU0fQ.ZAOBqg.WmMVvgFlLIyqN7ksZpkwDp3m5Xk", 
+                    "/files/5fdbde8aa463645eb1f19dfb81cff517/kernel_module.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjc2fQ.ZAOBqg.A3lq5tFgVzdrpwmCStispjWCfDM", 
+                    "/files/423f6227dd562b8caa28fc7a518468bb/main.c?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjc3fQ.ZAOBqg.snVdBORWzogXvJeKRatQxTYjrT8"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 46, 
+                "name": "hyper-k", 
+                "points": 1000, 
+                "service": "nc 130.61.225.80 1337", 
+                "solves": 0
+            }, 
+            {
+                "category": "pwn", 
+                "description": "Wooo kernel pwn. For this chall we provide a patched qemu and you should use it! The chall will NOT work without. You only need to know your x86 osdev. The patch is only there to make a bit deeper simulation of x86.", 
+                "files": [
+                    "/files/ec21ae501897e982601c6b2b0c2b28e2/handout.tar.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjUzfQ.ZAOBqg.HmFMV8ledrIE7wTOHLt1W6MznC0"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 45, 
+                "name": "FIPC", 
+                "points": 1000, 
+                "service": "nc 54.93.211.13 10003", 
+                "solves": 0
+            }, 
+            {
+                "category": "pwn", 
+                "description": "Yet another OSDev challenge. Hope you've brought a copy of Intel\u00ae 64 and IA-32 Architectures Software Developer's Manual!\r\n\r\nIf you get messages like Invalid data, try running `stty -icanon` before connecting and if that fails, try a different terminal emulator.\r\nsource: https://stackoverflow.com/questions/30315957/string-from-input-is-limited", 
+                "files": [
+                    "/files/f8060f8c1f804d70414fa7241a2bd322/handout.tar.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjUyfQ.ZAOBqg.bT-UEPgMq_xMO7AJxVBegV92hPQ"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 44, 
+                "name": "swedish memcpy", 
+                "points": 991, 
+                "service": "nc 54.93.211.13 10001", 
+                "solves": 6
+            }, 
+            {
+                "category": "pwn", 
+                "description": "Who doesn't need a JS engine in their boot sector? Am I right?\r\n\r\n\\> a=1+1\r\n\r\n\\> b=2+2\r\n\r\n\\> l(a+b)\r\n\r\n0006\r\n\r\nThere are multiple steps to the challenge, but the entire thing can be solved from within QEMU and does not require any mode switching.", 
+                "files": [
+                    "/files/04b8b31b95eaadc39222db373167f82f/handout.tar.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjU1fQ.ZAOBqg.A3kcdYqap3EJG3eh9xtDp98XV9c"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 47, 
+                "name": "js in my bs", 
+                "points": 949, 
+                "service": "nc 54.93.211.13 10000", 
+                "solves": 13
+            }, 
+            {
+                "category": "pwn", 
+                "description": "Toddler's first browser exploitation: https://github.com/cesanta/mjs", 
+                "files": [
+                    "/files/dec42aae0efd25c794e53dbfa9cd4b58/mjs_handout.tar.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjU3fQ.ZAOBqg.6N0Yz7IgZJ56G0oVnCFuGONKrCM"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 49, 
+                "name": "mjs", 
+                "points": 365, 
+                "service": "nc 54.93.211.13 10002", 
+                "solves": 43
+            }, 
+            {
+                "category": "pwn", 
+                "description": "My friend Rob the robber sent me this file talking about this ground-breaking technique called rob?", 
+                "files": [
+                    "/files/b54c615a4729d7b69f3223ef754533ac/handout.tar.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjU4fQ.ZAOBqg.7t6NAOsbZvgxSwdKC04LQRdTQO8"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 50, 
+                "name": "Robber", 
+                "points": 1000, 
+                "service": "nc 54.93.211.13 10004", 
+                "solves": 2
+            }
+        ], 
+        "rev": [
+            {
+                "category": "rev", 
+                "description": "I used to chase cycles, but I got bored so I switched direction.", 
+                "files": [
+                    "/files/fb0fd199b0d772e1b19bdb692336a43f/handout.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjM5fQ.ZAOBqQ.dI4wAUmP4tJ9XvYN6gKTHiUBlZc"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 32, 
+                "name": "CycleChaser", 
+                "points": 100, 
+                "service": "nc 3.123.91.129 13339", 
+                "solves": 52
+            }, 
+            {
+                "category": "rev", 
+                "description": "hmmm it runs on my machine, but I don't quite get why the use of udbgwr instruction in the initialization phase. Intel Docs is really vague on this instruction can you help me?", 
+                "files": [
+                    "/files/46e21c88f61292a2721140ee5a3cc892/just_run_me.tar.gz?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjU5fQ.ZAOBqg.OTdhK2Dw5QLwwWpMJig0I9D7GtI"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 51, 
+                "name": "Works on my machine", 
+                "points": 977, 
+                "service": [], 
+                "solves": 9
+            }, 
+            {
+                "category": "rev", 
+                "description": "I found an old blu-ray disc with a game on it so I decided to dump it, can you find anything interesting inside of it? (If you find a flag and it doesn't work, try the other challenge!)\r\n\r\nHint1:  It seems like you won't reach the flag through in normal gameplay. You may need to cheat a little\r\n\r\nHint2:  We have released an unstripped binary for these challenges. This required slight change to build script so we've also included a newly compiled stripped binary for completeness. (There should be no functional difference between the new and old stripped.)", 
+                "files": [
+                    "/files/080c6aace474714c99176e3e3c0ee7ff/game.pkg?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjY5fQ.ZAOBqg.yopzNCYpkB9Ndp28qZ1j7ABknNM", 
+                    "/files/d194199da04095d267a37b331b514a5e/game-unstripped.pkg?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjc4fQ.ZAOBqg.n0YE0UxBbql_6W72j1kQR2Q4XKE", 
+                    "/files/dc6372cb0ec5b359c14b5cc1a8badb52/game-stripped.pkg?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjc5fQ.ZAOBqg.DZl60ZL24LcnQHsnYhkw4j3OIEM"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 60, 
+                "name": "Jumping on the PPU", 
+                "points": 1000, 
+                "service": [], 
+                "solves": 0
+            }, 
+            {
+                "category": "rev", 
+                "description": "You've solved the warmup! This time you will have to jump through some hoops. ", 
+                "files": [
+                    "/files/6b550289b2326a9edbc56a57af987161/handout.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjcwfQ.ZAOBqw.u_1u2cQiPs83YAiBLJp4egGhKf0"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 63, 
+                "name": "CycleChaser Revenge", 
+                "points": 997, 
+                "service": "nc 3.123.91.129 13340", 
+                "solves": 4
+            }, 
+            {
+                "category": "rev", 
+                "description": "I found an old blu-ray disc with a game on it so I decided to dump it, can you find anything interesting inside of it? (If you find a flag and it doesn't work, try the other challenge!)\r\n\r\nHint1:  Check out the scoreboard, it's crazy efficient!\r\n\r\nHint2:  We have released an unstripped binary for these challenges. This required slight change to build script so we've also included a newly compiled stripped binary for completeness. (There should be no functional difference between the new and old stripped.)", 
+                "files": [
+                    "/files/8a1a8150249e500f59e44c4be860c7e7/game.pkg?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjY4fQ.ZAOBqg.iP9DG45_KjsaUIDe9ljW00rwcwE", 
+                    "/files/e23e2e0cdb857fca1b5ebe473ad18686/game-unstripped.pkg?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjgwfQ.ZAOBqg.J8w3DWbAnoKx0E7f7cGpuEaX6R0", 
+                    "/files/fc410970594396700c26ac80bdcc1197/game-stripped.pkg?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjgxfQ.ZAOBqg.UPBYBEFC3hUbjCb7HTh3elpWeXs"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 61, 
+                "name": "Jumping on the SPU", 
+                "points": 1000, 
+                "service": [], 
+                "solves": 0
+            }, 
+            {
+                "category": "rev", 
+                "description": "I found this file and uploaded it to a little robot from my homeland.\r\nHere you have a recording of the result, unfortunately it is very slow so I didn't have time to record everything.\r\nMy robot is not the most precise but I hope you can make sense of it.\r\n\r\nhttps://www.youtube.com/watch?v=XJRel3cX5GQ\r\n", 
+                "files": [
+                    "/files/2ed6b87c8a790b0aa815b9e1886496ae/formula_k.uf2?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjgyfQ.ZAOBqw.8ZxmB-SfSDJfmf0MR70UBMqpt1Y"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 68, 
+                "name": "Formula K", 
+                "points": 1000, 
+                "service": [], 
+                "solves": 0
+            }
+        ], 
+        "web": [
+            {
+                "category": "web", 
+                "description": "I just started at uni, but can't be bothered to show up. For some reason my Cyber Sec grade is F. Please help me get an A!", 
+                "files": [], 
+                "hints": [
+                    "Clarification: You have to change your own grade. Changing the grade gives you the flag when viewing your grades"
+                ], 
+                "id": 52, 
+                "name": "2Cool4School", 
+                "points": 977, 
+                "service": "http://grade.chal-kalmarc.tf", 
+                "solves": 9
+            }, 
+            {
+                "category": "web", 
+                "description": "I opened this cool new webshop. Hope its secure", 
+                "files": [
+                    "/files/cb1e430aa32087092b1fd36f8e90ac20/source.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjY2fQ.ZAOBqg.gMWXItUXoHG5-8eZ46YwiTG-OOc"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 55, 
+                "name": "Invoiced", 
+                "points": 100, 
+                "service": "http://invoiced.chal-kalmarc.tf/", 
+                "solves": 76
+            }, 
+            {
+                "category": "web", 
+                "description": "Coming soon: premium subscription for fast calculations!", 
+                "files": [
+                    "/files/10ce6676f6f9cb6da40d91632e85b96e/source-dummy-flag.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjYyfQ.ZAOBqg.HVqK-TZS8f_x83b1vZel8awYImM"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 54, 
+                "name": "Healthy Calc", 
+                "points": 908, 
+                "service": "http://healthy-calc.chal-kalmarc.tf:8080/", 
+                "solves": 17
+            }, 
+            {
+                "category": "web", 
+                "description": "Heard 'bout that new \ud83c\udfcc\ufe0f-webserver? Apparently HTTPS just works(!), but seems like _someone_ managed to screw up the setup, woops.  The flag.txt is deleted until I figure out that HTTPS and PHP stuff #hacker-proof", 
+                "files": [
+                    "/files/214239c6932b7112ac33da1b0e5dc687/source-dummy-flag.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjY0fQ.ZAOBqg.R0grt6klFQIjxiGqHdvZY7N8Lag"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 57, 
+                "name": "Ez \u26f3", 
+                "points": 100, 
+                "service": "https://caddy.chal-kalmarc.tf", 
+                "solves": 129
+            }, 
+            {
+                "category": "web", 
+                "description": "You'll need an 0day for this one. Vendor did not respond. You need to get local admin on the machine. You have 5 minutes for each attempt, and 10 attempts per team in total, so create your own test lab. Please run in a VM. The website used for the kiosk has been provided. It's running the latest version of KioWare with secure settings. Writeup for CVE-2022-44875 will be released when CTF is over. If your solve is different, please register it yourself. Information about the configuration has been posted in discord. Reach out if you have any specific questions. It is however not needed to solve, as the 0day works regardless of settings.", 
+                "files": [
+                    "/files/1c947cdc101ee032c4b28f9ba81aee41/OfficeFinder.zip?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjcyfQ.ZAOBqg.2_VcPJncbIErLMBNr1AiXE9mpKI"
+                ], 
+                "hints": [
+                    "-"
+                ], 
+                "id": 64, 
+                "name": "XScapy", 
+                "points": 1000, 
+                "service": [], 
+                "solves": 1
+            }, 
+            {
+                "category": "web", 
+                "description": "Yo, checkout this site I found.  I'm sure the admin is hiding a flag somewhere.  The site must be hackable (checkout the broken translations pages I've found [1] [2] [3]), but I can't hack it - can you help? Whenever I try to hack admin, he clicks *the abuse link* which bans my IP :'(\r\n\r\nI already tried bruteforcing admins password, it can't be done.\r\n\r\n[1] http://l33t.password-homecoming.chal-kalmarc.tf:81\r\n[2] http://dansk.password-homecoming.chal-kalmarc.tf:81\r\n[3] http://pirate.password-homecoming.chal-kalmarc.tf:81\r\n\r\n(Challenge note: no bruteforce needed, handout added to show all endpoints - _which is also visible by just clicking the frontpage_)", 
+                "files": [
+                    "/files/7e0b77ff37f8ed80492761a039e84d23/handout-app.py?token=eyJ1c2VyX2lkIjoyMTY2LCJ0ZWFtX2lkIjo1OTksImZpbGVfaWQiOjc1fQ.ZAOBqw.7XnMf5cOThjHFnMYXj_Y3ILBVSE"
+                ], 
+                "hints": [
+                    "Rumor has it the admin has outsourced clicking to a soup of html5lib"
+                ], 
+                "id": 67, 
+                "name": "Password Homecoming", 
+                "points": 1000, 
+                "service": "http://password-homecoming.chal-kalmarc.tf:81", 
+                "solves": 0
+            }
+        ]
+    }, 
+    "title": "KalmarCTF", 
+    "url": "https://kalmarc.tf"
+}
