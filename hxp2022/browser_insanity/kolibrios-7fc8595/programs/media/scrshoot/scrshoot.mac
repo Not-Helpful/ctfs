@@ -1,0 +1,199 @@
+;In this file content a macros need for compilation the scrshoot
+evm_redraw equ 1
+evm_key equ 10b
+evm_button equ 100b
+evm_mouse equ 100000b
+evm_ipc equ 1000000b
+
+;--- сообщить системе о начале перерисовки окна ---
+macro draw_status text_ptr
+{
+        mov     [status.text],dword text_ptr
+        call    send_draw_status
+}
+
+macro start_draw_window
+{
+	xor     ebx,ebx
+	inc     ebx
+	mcall   SF_REDRAW
+}
+
+;--- сообщить системе о завершении перерисовки окна ---
+macro stop_draw_window
+{
+	mcall   SF_REDRAW, SSF_END_DRAW
+}
+
+;--- установить маску ожидаемых событий ---
+
+;--- ожидать события ---
+macro wait_event redraw,key,button,mouse,ipc,other
+{
+        mcall   SF_WAIT_EVENT
+        dec     ax
+if redraw eq
+else
+        jz      redraw
+end if
+        dec     ax
+if key eq
+else
+        jz      key
+end if
+        dec     ax
+if button eq
+else
+        jz      button
+end if
+        dec     ax
+        dec     ax
+        dec     ax
+if mouse eq
+else
+        jz      mouse
+end if
+if ipc eq
+else
+        dec     ax
+        jz      ipc
+end if
+if other eq
+        jmp     still
+else
+        jmp     other
+end if
+}
+;--- установить маску ожидаемых событий ---
+macro set_events_mask mask
+{
+	mcall   SF_SET_EVENTS_MASK, mask
+}
+
+macro get_key
+{
+	mcall   SF_GET_KEY
+}
+;--- получить код нажатой кнопки ---
+macro get_pressed_button
+{
+	mcall   SF_GET_BUTTON
+}
+macro get_active_window
+{
+	mcall   SF_SYSTEM,SSF_GET_ACTIVE_WINDOW
+}
+;--- получить информацию о процессе ---
+macro get_procinfo proc_inf_buf,slot_num
+{
+        ;mov     ebx,proc_inf_buf
+        push    proc_inf_buf
+        pop     ebx
+if slot_num eq
+        xor     ecx,ecx
+        dec     ecx
+else
+        ;mov     ecx,slot_num
+        push    slot_num
+        pop     ecx
+end if
+        mcall   SF_THREAD_INFO
+}
+macro get_screen_prop  struc_ptr
+{
+        mov     eax,SF_GET_GRAPHICAL_PARAMS
+        push    eax eax
+        xor     ebx,ebx
+        inc     ebx
+        mcall
+        mov     [struc_ptr],eax
+        pop     eax
+        inc     ebx
+        mcall
+        mov     [struc_ptr+4],ax
+        pop     eax
+        inc     ebx
+        mcall
+        mov     [struc_ptr+6],eax
+}
+macro min_window
+{
+	mcall   SF_SYSTEM,SSF_MINIMIZE_WINDOW
+}
+macro app_close
+{
+	mcall  SF_TERMINATE_PROCESS
+}
+macro get_skin_height
+{
+	mcall   SF_STYLE_SETTINGS,SSF_GET_SKIN_HEIGHT
+}
+macro delay time
+{
+if time eq
+else
+	mov     ebx,time
+end if
+	mcall   SF_SLEEP
+}
+macro activ_window slot_n
+{
+if slot_n eq
+else
+	mov     ecx,slot_n
+end if
+	mcall   SF_SYSTEM,SSF_FOCUS_WINDOW
+}
+struc screen_prop
+{
+.height: dw ? ;+0
+.width: dw ?  ;+2
+.bitspp: dw ? ;+4
+.bytesps: dd ?;+6
+}
+struc sys_color_table
+{
+.frames: dd ?  ;+0
+.grab: dd ?    ;+4
+.work_dark: dd ? ;+8
+.work_light: dd ?  ;+12
+.grab_text: dd ?  ;+16
+.work: dd ?       ;+20
+.work_button: dd ?;+24
+.work_button_text: dd ? ;+28
+.work_text: dd ?        ;+32
+.work_graph: dd ?       ;+36
+}
+struc procinfo
+{
+.takts_per_second: dd ?
+.window_stack_pos: dw ?
+.slot_number: dw ?
+dw ?
+.name: rb 11
+.align: db ?
+.addres: dd ?
+.use_mem: dd ?
+.pid: dd ?
+.left: dd ?
+.top: dd ?
+.width: dd ?
+.height: dd ?
+.slot_state: dw ?
+rb (1024-56)
+}
+
+
+
+struc ipc_buffer size
+{
+.block: dd ?
+.in_use: dd ?
+.messages: rb size
+}
+
+;--- цвета  ---
+cl_white=0xffffff
+cl_black=0x000000
+
+ch_struc_size=36

@@ -1,0 +1,380 @@
+﻿(*
+    Copyright 2021, 2022 Anton Krotov
+
+    This file is part of CEdit.
+
+    CEdit is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    CEdit is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with CEdit. If not, see <http://www.gnu.org/licenses/>.
+*)
+
+MODULE Scroll;
+
+IMPORT G := Graph, K := KolibriOS, U := Utils;
+
+CONST
+
+	DELAY = 40;
+
+TYPE
+
+	tProcedure = PROCEDURE;
+
+	tScroll* = RECORD
+		vertical, mouse: BOOLEAN;
+		top*, left*,
+		width*, height*: INTEGER; (* read only *)
+		btnSize, sliderSize: INTEGER;
+		pos, Slider, pos0, maxVal*, value*: INTEGER;
+		canvas: G.tCanvas;
+		change: tProcedure;
+		delay: INTEGER;
+		btn*: INTEGER
+	END;
+
+
+PROCEDURE MouseUp (VAR scroll: tScroll);
+BEGIN
+	scroll.Slider := -1;
+	scroll.btn := 0;
+	scroll.mouse := FALSE;
+	scroll.delay := DELAY
+END MouseUp;
+
+
+PROCEDURE create* (vertical: BOOLEAN; width, height: INTEGER; btnSize, sliderSize: INTEGER; change: tProcedure; VAR scroll: tScroll);
+VAR
+	res: tScroll;
+BEGIN
+	MouseUp(res);
+	res.vertical := vertical;
+	res.left := 0;
+	res.top := 0;
+	res.width := width;
+	res.height := height;
+	res.btnSize := btnSize;
+	res.sliderSize := sliderSize;
+	res.pos := 0;
+	res.maxVal := 0;
+	res.canvas := G.CreateCanvas(width, height);
+	res.change := change;
+	scroll := res
+END create;
+
+
+PROCEDURE Rect (canvas: G.tCanvas; left, top, right, bottom: INTEGER);
+BEGIN
+	G.FillRect(canvas, left, top, right, bottom);
+	G.SetColor(canvas, K.colors.line);
+	G.Rect(canvas, left, top, right, bottom);
+END Rect;
+
+
+PROCEDURE _draw (scroll: tScroll);
+VAR
+	canvas: G.tCanvas;
+	x, y, d, x1, x2, y1, y2,
+	width, height, btn: INTEGER;
+
+
+	PROCEDURE SetColor (canvas: G.tCanvas; c: BOOLEAN);
+	VAR
+		color: INTEGER;
+	BEGIN
+		IF c THEN
+			color := K.colors.button
+		ELSE
+			color := K.colors.button_text
+		END;
+		G.SetColor(canvas, color)
+	END SetColor;
+
+
+BEGIN
+	btn := scroll.btnSize;
+	width := scroll.width;
+	height := scroll.height;
+	canvas := scroll.canvas;
+	G.SetColor(canvas, K.colors.light);
+	G.clear(canvas);
+	G.SetColor(canvas, K.colors.line);
+	G.Rect(canvas, 0, 0, width - 1, height - 1);
+	IF scroll.vertical THEN
+		SetColor(canvas, scroll.btn # -1);
+		Rect(canvas, 0, 0, width - 1, btn - 1);
+		SetColor(canvas, scroll.btn # 1);
+		Rect(canvas, 0, height - btn, width - 1, height - 1);
+		G.SetColor(canvas, K.colors.button);
+		Rect(canvas, 0, btn + scroll.pos - 1, width - 1, btn + scroll.pos + scroll.sliderSize - 1);
+
+		G.SetColor(canvas, K.colors.button_text);
+
+		y := btn + scroll.pos + scroll.sliderSize DIV 2 - 1;
+		G.HLine(canvas, y, width DIV 4, 3*width DIV 4);
+		G.HLine(canvas, y - 3, width DIV 3, 2*width DIV 3);
+		G.HLine(canvas, y + 3, width DIV 3, 2*width DIV 3);
+
+		d := 4*width DIV 10;
+		x1 := (width - d) DIV 2;
+		x2 := x1 + d;
+
+		SetColor(canvas, scroll.btn = -1);
+		y := (btn - d DIV 2) DIV 2 + d DIV 2 - 1;
+		G.Triangle(canvas, x1 - 1, y, x2, y, G.triUp);
+
+		SetColor(canvas, scroll.btn = 1);
+		y := y + height - btn - d DIV 2 + 1;
+		G.Triangle(canvas, x1 - 1, y, x2, y, G.triDown);
+	ELSE
+		SetColor(canvas, scroll.btn # -1);
+		Rect(canvas, 0, 0, btn - 1, height - 1);
+		SetColor(canvas, scroll.btn # 1);
+		Rect(canvas, width - btn, 0, width - 1, height - 1);
+		G.SetColor(canvas, K.colors.button);
+		Rect(canvas, btn + scroll.pos - 1, 0, btn + scroll.pos + scroll.sliderSize - 1, height - 1);
+
+		G.SetColor(canvas, K.colors.button_text);
+
+		x := btn + scroll.pos + scroll.sliderSize DIV 2 - 1;
+		G.VLine(canvas, x, height DIV 4, 3*height DIV 4);
+		G.VLine(canvas, x - 3, height DIV 3, 2*height DIV 3);
+		G.VLine(canvas, x + 3, height DIV 3, 2*height DIV 3);
+
+		d := 4*height DIV 10;
+		y1 := (height - d) DIV 2;
+		y2 := y1 + d;
+
+		SetColor(canvas, scroll.btn = -1);
+		x := (btn - d DIV 2) DIV 2 + d DIV 2 - 1;
+		G.Triangle(canvas, x, y1 - 1, x, y2, G.triLeft);
+
+		SetColor(canvas, scroll.btn = 1);
+		x := x + width - btn - d DIV 2 + 1;
+		G.Triangle(canvas, x, y1 - 1, x, y2, G.triRight);
+	END;
+	G.DrawCanvas(scroll.canvas, scroll.left, scroll.top)
+END _draw;
+
+
+PROCEDURE draw* (scroll: tScroll);
+BEGIN
+	IF scroll.canvas # NIL THEN
+		_draw(scroll)
+	END
+END draw;
+
+
+PROCEDURE resize* (VAR scroll: tScroll; width, height: INTEGER);
+BEGIN
+	G.destroy(scroll.canvas);
+	scroll.canvas := G.CreateCanvas(width, height);
+	scroll.width := width;
+	scroll.height := height;
+	draw(scroll)
+END resize;
+
+
+PROCEDURE setValue* (VAR scroll: tScroll; value: INTEGER);
+VAR
+	pos, maxPos, maxVal, n, m: INTEGER;
+BEGIN
+	maxVal := scroll.maxVal;
+	IF scroll.vertical THEN
+		maxPos := scroll.height
+	ELSE
+		maxPos := scroll.width
+	END;
+	maxPos := maxPos - scroll.btnSize*2 - scroll.sliderSize + 1;
+	IF (value < 0) OR (maxVal <= 0) THEN
+		value := 0;
+		pos := 0
+	ELSIF value > maxVal THEN
+		value := maxVal;
+		pos := maxPos
+	ELSE
+		IF (maxPos + 1) >= maxVal THEN
+			n := (maxPos + 1) DIV maxVal;
+			m := (maxPos + 1) MOD maxVal;
+			pos := value*n + MIN(value, m)
+		ELSE
+			pos := FLOOR(FLT(value)*FLT(maxPos + 1)/FLT(maxVal))
+		END;
+		IF pos > maxPos THEN
+			pos := maxPos;
+			value := maxVal
+		END
+	END;
+	scroll.pos := pos;
+	scroll.value := value
+END setValue;
+
+
+PROCEDURE ceil (p, q: INTEGER): INTEGER;
+	RETURN p DIV q + ORD(p MOD q # 0)
+END ceil;
+
+
+PROCEDURE setPos (VAR scroll: tScroll; pos: INTEGER);
+VAR
+	maxPos, value, maxVal, n, m, x, x0, q: INTEGER;
+BEGIN
+	maxVal := scroll.maxVal;
+	IF maxVal > 0 THEN
+		IF scroll.vertical THEN
+			maxPos := scroll.height
+		ELSE
+			maxPos := scroll.width
+		END;
+		maxPos := maxPos - scroll.btnSize*2 - scroll.sliderSize + 1;
+		IF pos <= 0 THEN
+			pos := 0;
+			value := 0
+		ELSIF pos >= maxPos THEN
+			pos := maxPos;
+			value := maxVal
+		ELSE
+			IF maxVal <= maxPos + 1 THEN
+				n := (maxPos + 1) DIV maxVal;
+				m := (maxPos + 1) MOD maxVal;
+
+				q := m*(n + 1);
+				IF q < pos THEN
+					value := ceil(pos - m, n)
+				ELSIF q > pos THEN
+					value := ceil(pos, n + 1)
+				ELSE
+					value := m
+				END;
+
+				x := value*n + MIN(value, m);
+				x0 := (value - 1)*n + MIN(value - 1, m);
+
+				IF x - pos > pos - x0 THEN
+					pos := x0;
+					DEC(value)
+				ELSE
+					pos := x;
+					IF pos > maxPos THEN
+						pos := maxPos;
+						value := maxVal
+					END
+				END
+			ELSE
+				value := FLOOR(FLT(maxVal)*FLT(pos)/FLT(maxPos + 1))
+			END
+		END
+	ELSE
+		pos := 0;
+		value := 0
+	END;
+	scroll.pos := pos;
+	scroll.value := value
+END setPos;
+
+
+PROCEDURE MouseMove (VAR scroll: tScroll; x, y: INTEGER);
+VAR
+	c: INTEGER;
+BEGIN
+	IF scroll.vertical THEN
+		c := y - scroll.top
+	ELSE
+		c := x - scroll.left
+	END;
+	setPos(scroll, scroll.pos0 + c - scroll.Slider);
+	draw(scroll)
+END MouseMove;
+
+
+PROCEDURE button (VAR scroll: tScroll);
+VAR
+	btn: INTEGER;
+BEGIN
+	WHILE scroll.btn # 0 DO
+		btn := scroll.btn;
+		setValue(scroll, scroll.value + btn);
+		draw(scroll);
+		IF scroll.change # NIL THEN
+			scroll.change
+		END;
+		scroll.btn := 0;
+		IF 0 IN K.MouseState() THEN
+			WHILE (0 IN K.MouseState()) & (scroll.delay > 0) DO
+				K.Pause(1);
+				DEC(scroll.delay)
+			END;
+			IF scroll.delay = 0 THEN
+				scroll.btn := btn;
+				scroll.delay := 3
+			ELSE
+				scroll.delay := DELAY
+			END
+		ELSE
+			scroll.delay := DELAY
+		END
+	END
+END button;
+
+
+PROCEDURE MouseDown (VAR scroll: tScroll; x, y: INTEGER);
+VAR
+	c, size: INTEGER;
+BEGIN
+	DEC(x, scroll.left);
+	DEC(y, scroll.top);
+	scroll.mouse := TRUE;
+	IF U.between(1, x, scroll.width - 2) & U.between(1, y, scroll.height - 2) THEN
+		IF scroll.vertical THEN
+			c := y;
+			size := scroll.height
+		ELSE
+			c := x;
+			size := scroll.width
+		END;
+		IF U.between(scroll.btnSize + scroll.pos - 1, c, scroll.btnSize + scroll.pos + scroll.sliderSize - 1) THEN
+			scroll.pos0 := scroll.pos;
+			scroll.Slider := c
+		ELSIF U.between(0, c, scroll.btnSize - 1) THEN
+			scroll.btn := -1
+		ELSIF U.between(size - scroll.btnSize, c, size - 1) THEN
+			scroll.btn := 1
+		ELSE
+			setPos(scroll, c - scroll.btnSize - scroll.sliderSize DIV 2);
+			scroll.pos0 := scroll.pos;
+			scroll.Slider := c;
+			draw(scroll)
+		END
+	END
+END MouseDown;
+
+
+PROCEDURE mouse* (VAR scroll: tScroll);
+VAR
+	msState: SET;
+	x, y: INTEGER;
+BEGIN
+	K.mouse(msState, x, y);
+	IF 0 IN msState THEN
+		IF ~scroll.mouse THEN
+			MouseDown(scroll, x, y)
+		ELSIF scroll.Slider # -1 THEN
+			MouseMove(scroll, x, y)
+		END
+	ELSIF scroll.mouse THEN
+		MouseUp(scroll);
+		draw(scroll)
+	END;
+	button(scroll)
+END mouse;
+
+
+END Scroll.

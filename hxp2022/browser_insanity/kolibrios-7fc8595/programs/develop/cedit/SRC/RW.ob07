@@ -1,0 +1,578 @@
+﻿(*
+    Copyright 2021, 2022 Anton Krotov
+
+    This file is part of CEdit.
+
+    CEdit is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    CEdit is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with CEdit. If not, see <http://www.gnu.org/licenses/>.
+*)
+
+MODULE RW;
+
+IMPORT
+    File, SYSTEM, KOSAPI, E := Encodings,
+    CB := Clipboard, Lines;
+
+
+CONST
+
+    CR = 0DX; LF = 0AX; TAB = 9X; SPACE = 20X;
+    BOM = 0FEFFX;
+
+    BUF_SIZE = 65536;
+
+    NAME_LEN = 1024;
+
+
+TYPE
+
+    tFileName* = ARRAY NAME_LEN OF CHAR;
+
+    tInput* = POINTER TO RECORD
+        buffer:   INTEGER;
+        strBuf:   Lines.tLine;
+        pos, cnt: INTEGER;
+        CR:       BOOLEAN;
+        clipbrd:  BOOLEAN;
+        getChar:  PROCEDURE (file: tInput): INTEGER
+    END;
+
+    tOutput* = POINTER TO RECORD
+        handle:   File.FS;
+        buffer:   ARRAY BUF_SIZE OF BYTE;
+        pos:      INTEGER;
+        eol:      E.tEOL;
+        putChar:  PROCEDURE (file: tOutput; code: INTEGER);
+        error:    BOOLEAN
+    END;
+
+
+PROCEDURE getByte (file: tInput): BYTE;
+VAR
+    res: BYTE;
+BEGIN
+    IF file.cnt > 0 THEN
+        SYSTEM.GET8(file.buffer + file.pos, res);
+        INC(file.pos);
+        DEC(file.cnt)
+    ELSE
+        res := 0
+    END
+    RETURN res
+END getByte;
+
+
+PROCEDURE peakByte (file: tInput): BYTE;
+VAR
+    res: BYTE;
+BEGIN
+    IF file.cnt > 0 THEN
+        SYSTEM.GET8(file.buffer + file.pos, res)
+    ELSE
+        res := 0
+    END
+    RETURN res
+END peakByte;
+
+
+PROCEDURE getCharUTF8 (file: tInput): INTEGER;
+VAR
+    code, n: INTEGER;
+    b: BYTE;
+BEGIN
+    b := getByte(file);
+    IF b <= 07FH THEN
+        n := 0
+    ELSIF (0C0H <= b) & (b <= 0DFH) THEN
+        DEC(b, 0C0H);
+        n := 1
+    ELSIF (0E0H <= b) & (b <= 0EFH) THEN
+        DEC(b, 0E0H);
+        n := 2
+    ELSE
+    	n := -1
+(*    ELSIF (0F0H <= b) & (b <= 0F7H) THEN
+        DEC(b, 0F0H);
+        n := 3
+    ELSIF (0F8H <= b) & (b <= 0FBH) THEN
+        DEC(b, 0F8H);
+        n := 4
+    ELSIF (0FCH <= b) & (b <= 0FDH) THEN
+        DEC(b, 0FCH);
+        n := 5
+    ELSIF b = 0FEH THEN
+        b := 0;
+        n := 6
+    ELSIF b = 0FFH THEN
+        n := -1
+    ELSIF (080H <= b) & (b <= 0BFH) THEN
+        n := -1*)
+    END;
+
+    code := b;
+(*
+    IF n > 2 THEN
+        n := -1
+    END;
+*)
+    WHILE n > 0 DO
+        DEC(n);
+        b := peakByte(file);
+        IF (080H <= b) & (b <= 0BFH) THEN
+            code := code*64 + getByte(file) - 080H
+        ELSE
+            n := -1
+        END
+    END;
+
+    IF n = -1 THEN
+        code := E.UNDEF
+    END
+
+    RETURN code
+END getCharUTF8;
+
+
+PROCEDURE getCharCP1251 (file: tInput): INTEGER;
+    RETURN E.cp1251[getByte(file)]
+END getCharCP1251;
+
+
+PROCEDURE getCharCP866 (file: tInput): INTEGER;
+    RETURN E.cp866[getByte(file)]
+END getCharCP866;
+
+(*
+PROCEDURE getCharUTF16LE (file: tInput): INTEGER;
+    RETURN getByte(file) + getByte(file) * 256
+END getCharUTF16LE;
+*)
+
+PROCEDURE getString* (file: tInput; line: Lines.tLine; tabs: BOOLEAN; VAR eol: BOOLEAN): INTEGER;
+VAR
+    c: WCHAR;
+    i, k, n: INTEGER;
+BEGIN
+    eol := FALSE;
+    n := 0;
+    i := ORD(file.cnt > 0) - 1;
+    WHILE (file.cnt > 0) & ~eol DO
+        c := WCHR(file.getChar(file) MOD 65536);
+        IF c = Lines.TAB1 THEN
+        	c := SPACE
+        ELSIF c = 0X THEN
+        	c := Lines.NUL
+        END;
+
+        IF c = CR THEN
+            eol := TRUE;
+            file.CR := TRUE
+        ELSIF c = LF THEN
+            IF ~file.CR THEN
+                eol := TRUE
+            END;
+            file.CR := FALSE
+        ELSIF c = TAB THEN
+            k := Lines.tab - i MOD Lines.tab;
+            IF tabs THEN
+                Lines.setChar(file.strBuf, i, TAB)
+            ELSE
+            	Lines.setChar(file.strBuf, i, SPACE)
+            END;
+            INC(i);
+            DEC(k);
+            WHILE k > 0 DO
+                IF tabs THEN
+                    Lines.setChar(file.strBuf, i, Lines.TAB1)
+                ELSE
+                    Lines.setChar(file.strBuf, i, SPACE)
+                END;
+                INC(i);
+                DEC(k)
+            END;
+            file.CR := FALSE
+        ELSIF c = BOM THEN
+            file.CR := FALSE
+        ELSE
+        	Lines.setChar(file.strBuf, i, c);
+            INC(i);
+            file.CR := FALSE
+        END
+    END;
+    IF i >= 0 THEN
+    	Lines.setChar(file.strBuf, i, 0X);
+    	file.strBuf.length := i;
+    	Lines._insert2(line, 0, file.strBuf)
+    END;
+    INC(n, i)
+    RETURN n
+END getString;
+
+
+PROCEDURE detectEncoding (text: tInput): INTEGER;
+VAR
+    pos, cnt, res: INTEGER;
+    continue, bom: BOOLEAN;
+    b: BYTE;
+    cp866, cp1251: INTEGER;
+BEGIN
+    pos := text.pos;
+    cnt := text.cnt;
+    continue := TRUE;
+    WHILE (text.cnt > 0) & continue DO
+        IF getByte(text) > 127 THEN
+            continue := FALSE
+        END
+    END;
+    text.cnt := cnt;
+    text.pos := pos;
+    IF continue THEN
+        res := E.CP866
+    ELSE
+        bom := getCharUTF8(text) = ORD(BOM);
+        continue := TRUE;
+        text.cnt := cnt;
+        text.pos := pos;
+        WHILE (text.cnt > 0) & continue DO
+            IF getCharUTF8(text) = E.UNDEF THEN
+                continue := FALSE
+            END
+        END;
+        IF continue THEN
+            IF bom THEN
+                res := E.UTF8BOM
+            ELSE
+                res := E.UTF8
+            END
+        ELSE
+            text.cnt := cnt;
+            text.pos := pos;
+            cp866  := 0;
+            cp1251 := 0;
+            WHILE text.cnt > 0 DO
+                b := getByte(text);
+                IF b > 127 THEN
+                    IF b >= 192 THEN
+                        INC(cp1251)
+                    ELSE
+                        INC(cp866)
+                    END
+                END
+            END;
+            IF cp1251 > cp866 THEN
+                res := E.CP1251
+            ELSE
+                res := E.CP866
+            END
+        END;
+        text.cnt := cnt;
+        text.pos := pos
+    END
+    RETURN res
+END detectEncoding;
+
+
+PROCEDURE detectEOL (text: tInput): INTEGER;
+VAR
+	pos, cnt, c, res: INTEGER;
+BEGIN
+	res := -1;
+	pos := text.pos;
+	cnt := text.cnt;
+	WHILE (text.cnt > 0) & (res = -1) DO
+		c := text.getChar(text);
+		IF c = ORD(LF) THEN
+			res := E.EOL_LF
+		ELSIF c = ORD(CR) THEN
+			IF text.getChar(text) = ORD(LF) THEN
+				res := E.EOL_CRLF
+			ELSE
+				res := E.EOL_CR
+			END
+		END
+	END;
+	text.cnt := cnt;
+	text.pos := pos;
+	IF res = -1 THEN
+		res := E.EOL_CRLF
+	END
+	RETURN res
+END detectEOL;
+
+
+PROCEDURE getMaxLength (file: tInput): INTEGER;
+VAR
+	res, cur, cnt: INTEGER;
+	c: WCHAR;
+BEGIN
+	res := 0;
+	cur := 0;
+	cnt := file.cnt;
+	WHILE file.cnt > 0 DO
+		c := WCHR(file.getChar(file) MOD 65536);
+		IF (c = CR) OR (c = LF) THEN
+			cur := 0
+		ELSIF c = TAB THEN
+			INC(cur, Lines.tab - cur MOD Lines.tab)
+		ELSE
+			INC(cur)
+		END;
+		IF cur > res THEN
+			res := cur
+		END
+	END;
+	file.cnt := cnt;
+	file.pos := 0
+	RETURN res
+END getMaxLength;
+
+
+PROCEDURE createStrBuf (file: tInput);
+BEGIN
+	file.strBuf := Lines.create(TRUE);
+	Lines.resize(file.strBuf, MAX(2048, getMaxLength(file) + 1))
+END createStrBuf;
+
+
+PROCEDURE _loadFromMem (ptr, size: INTEGER; cp866: BOOLEAN; VAR enc, eol: INTEGER): tInput;
+VAR
+    res: tInput;
+BEGIN
+    NEW(res);
+    res.pos := 0;
+    res.CR := FALSE;
+    res.getChar := NIL;
+    res.clipbrd := FALSE;
+    res.buffer := ptr;
+    res.cnt := size;
+    IF res.buffer = 0 THEN
+        DISPOSE(res)
+    ELSE
+        enc := detectEncoding(res);
+        IF enc IN {E.UTF8BOM, E.UTF8} THEN
+            res.getChar := getCharUTF8
+        ELSIF enc = E.CP866 THEN
+            res.getChar := getCharCP866
+        ELSIF enc = E.CP1251 THEN
+        	IF cp866 THEN
+        		enc := E.CP866;
+        		res.getChar := getCharCP866
+        	ELSE
+            	res.getChar := getCharCP1251
+            END
+        END;
+        eol := detectEOL(res);
+        createStrBuf(res)
+    END
+    RETURN res
+END _loadFromMem;
+
+
+PROCEDURE loadFromMem* (ptr, size: INTEGER; VAR enc, eol: INTEGER): tInput;
+    RETURN _loadFromMem(ptr, size, TRUE, enc, eol)
+END loadFromMem;
+
+
+PROCEDURE loadFromFile* (name: tFileName; VAR enc, eol: INTEGER): tInput;
+VAR
+    ptr, size: INTEGER;
+BEGIN
+	size := File.FileSize(name);
+    IF size = 0 THEN
+    	ptr := KOSAPI.malloc(4096)
+    ELSE
+    	ptr := File.Load(name, size)
+    END
+	RETURN _loadFromMem(ptr, size, FALSE, enc, eol)
+END loadFromFile;
+
+
+PROCEDURE clipboard* (): tInput;
+VAR
+    res: tInput;
+BEGIN
+    NEW(res);
+    res.pos := 0;
+    res.CR := FALSE;
+    res.clipbrd := TRUE;
+    res.getChar := NIL;
+    res.getChar := getCharCP866;
+    res.buffer := CB.get(res.cnt);
+    IF res.buffer = 0 THEN
+        DISPOSE(res)
+    ELSE
+    	createStrBuf(res)
+    END
+    RETURN res
+END clipboard;
+
+
+PROCEDURE putByte (file: tOutput; b: BYTE);
+BEGIN
+    IF file.pos = BUF_SIZE THEN
+        IF File.Write(file.handle, SYSTEM.ADR(file.buffer[0]), BUF_SIZE) # BUF_SIZE THEN
+        	file.error := TRUE
+        END;
+        file.pos := 0
+    END;
+    file.buffer[file.pos] := b;
+    INC(file.pos)
+END putByte;
+
+
+PROCEDURE putString* (file: tOutput; line: Lines.tLine; n: INTEGER);
+VAR
+    i: INTEGER;
+    c: WCHAR;
+BEGIN
+    FOR i := 0 TO n - 1 DO
+        c := Lines.getChar(line, i);
+        IF c = Lines.NUL THEN
+        	file.putChar(file, 0)
+        ELSIF c # Lines.TAB1 THEN
+        	file.putChar(file, ORD(c))
+        END
+    END
+END putString;
+
+
+PROCEDURE newLine* (file: tOutput);
+VAR
+    i: INTEGER;
+BEGIN
+    i := 0;
+    WHILE file.eol[i] # 0X DO
+    	file.putChar(file, ORD(file.eol[i]));
+        INC(i)
+    END
+END newLine;
+
+
+PROCEDURE putCharUTF8 (file: tOutput; code: INTEGER);
+BEGIN
+    IF code <= 7FH THEN
+        putByte(file, code)
+    ELSIF (80H <= code) & (code <= 7FFH) THEN
+        putByte(file, code DIV 64 + 0C0H);
+        putByte(file, code MOD 64 + 080H)
+    ELSIF (800H <= code) & (code <= 0FFFFH) THEN
+        putByte(file, code DIV 4096 + 0E0H);
+        putByte(file, (code DIV 64) MOD 64 + 080H);
+        putByte(file, code MOD 64 + 080H)
+    ELSE
+    	putByte(file, ORD("?"))
+    END
+END putCharUTF8;
+
+
+PROCEDURE putCharCP (file: tOutput; code, cp: INTEGER);
+VAR
+    n: INTEGER;
+BEGIN
+    n := E.UNI[code, cp];
+    IF n # E.UNDEF THEN
+        putByte(file, n)
+    ELSE
+        putByte(file, ORD("?"))
+    END
+END putCharCP;
+
+
+PROCEDURE putCharCP1251 (file: tOutput; code: INTEGER);
+BEGIN
+	putCharCP(file, code, E.CP1251)
+END putCharCP1251;
+
+
+PROCEDURE putCharCP866 (file: tOutput; code: INTEGER);
+BEGIN
+	putCharCP(file, code, E.CP866)
+END putCharCP866;
+
+(*
+PROCEDURE putCharUTF16LE (file: tOutput; code: INTEGER);
+BEGIN
+    IF ~((0 <= code) & (code <= 65535)) THEN
+    	code := ORD("?")
+    END;
+    putByte(file, code MOD 256);
+    putByte(file, code DIV 256)
+END putCharUTF16LE;*)
+
+
+PROCEDURE close* (VAR file: tOutput): BOOLEAN;
+VAR
+    res: BOOLEAN;
+BEGIN
+    res := TRUE;
+    IF file # NIL THEN
+        IF file.handle # NIL THEN
+            IF file.pos > 0 THEN
+                res := File.Write(file.handle, SYSTEM.ADR(file.buffer[0]), file.pos) = file.pos
+            END;
+            res := res & ~file.error;
+            File.Close(file.handle)
+        END;
+        DISPOSE(file)
+    END
+    RETURN res
+END close;
+
+
+PROCEDURE create* (name: tFileName; enc, nl: INTEGER): tOutput;
+VAR
+    res: tOutput;
+BEGIN
+    NEW(res);
+    res.pos := 0;
+    res.eol := E.eol[nl];
+    res.putChar := NIL;
+    IF enc IN {E.UTF8BOM, E.UTF8} THEN
+        IF enc = E.UTF8BOM THEN
+            putCharUTF8(res, ORD(BOM))
+        END;
+        res.putChar := putCharUTF8
+    (*ELSIF enc = E.UTF16LE THEN
+        res.putChar := putCharUTF16LE*)
+    ELSIF enc = E.CP1251 THEN
+        res.putChar := putCharCP1251
+    ELSIF enc = E.CP866 THEN
+        res.putChar := putCharCP866
+    END;
+    ASSERT(res.putChar # NIL);
+    res.handle := File.Create(name);
+    res.error := FALSE;
+    IF res.handle = NIL THEN
+        DISPOSE(res)
+    END
+    RETURN res
+END create;
+
+
+PROCEDURE destroy* (VAR file: tInput);
+VAR
+	null: INTEGER;
+BEGIN
+    IF file # NIL THEN
+        IF file.buffer # 0 THEN
+            null := KOSAPI.free(file.buffer - 12*ORD(file.clipbrd))
+        END;
+        IF file.strBuf # NIL THEN
+        	Lines.resize(file.strBuf, 0)
+        END;
+        DISPOSE(file)
+    END
+END destroy;
+
+
+END RW.

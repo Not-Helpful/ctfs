@@ -1,0 +1,2823 @@
+﻿(*
+    Copyright 2021, 2022 Anton Krotov
+
+    This file is part of CEdit.
+
+    CEdit is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    CEdit is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with CEdit. If not, see <http://www.gnu.org/licenses/>.
+*)
+
+MODULE Text;
+
+IMPORT
+    List, Lines,
+    G := Graph,
+    U := Utils,
+    RW, Search,
+    E := Encodings,
+    CB := Clipboard,
+    ChangeLog, File,
+    Lang := Languages;
+
+
+CONST
+
+    SPACE = Lines.SPACE;
+    TAB = Lines.TAB;
+    TAB1 = Lines.TAB1;
+    lenEOL = CB.lenEOL;
+
+    mark_width = 2;
+    pad_left = mark_width + 3;
+    pad_top = 0;
+    inter = 2;
+
+
+TYPE
+
+    tPoint* = RECORD
+        X*, Y*: INTEGER
+    END;
+
+    pPoint = POINTER TO tPoint;
+
+    tString* = ARRAY 1000 OF WCHAR;
+
+    tLine = Lines.tLine;
+
+    tGuard = POINTER TO RECORD (ChangeLog.tGuard)
+        selected: BOOLEAN;
+        cursor, select2, scroll: tPoint;
+        CurX: INTEGER
+    END;
+
+    tText* = POINTER TO RECORD (List.tList)
+        cursor, select, select2: pPoint;
+        scroll: tPoint;
+        CurX: INTEGER;
+        smallChange: INTEGER;
+        modified*, smallMove,
+        comments, guard, fasm*,
+        search, cs, whole: BOOLEAN;
+        edition*: tGuard;
+        curLine: tLine;
+        lang*: INTEGER;
+        enc, eol: INTEGER;
+        foundList: List.tList;
+        foundSel: INTEGER;
+        searchText: tString;
+        LinesVector: Lines.tVector;
+        chLog*: ChangeLog.tLog;
+        maxLength*: INTEGER;
+        fileName*: RW.tFileName
+    END;
+
+    tProcedure = PROCEDURE;
+
+
+VAR
+
+    pdelete: PROCEDURE (text: tText);
+    ShowCursor: PROCEDURE;
+
+    colors: RECORD
+                text, back, seltext, selback, modified, saved, curline, numtext, numback: INTEGER;
+                comment, string, escape, num, delim, key1, key2, key3: INTEGER
+             END;
+    canvas: G.tCanvas;
+    drawCursor: BOOLEAN;
+    padding: RECORD left, top: INTEGER END;
+    size, textsize: tPoint;
+    charWidth, charHeight: INTEGER;
+    autoIndents*, lineNumbers*, autoBrackets*, trimSpace*: BOOLEAN;
+    idxTable: Search.IdxTable;
+
+
+PROCEDURE setLang* (text: tText; lang: INTEGER);
+BEGIN
+	IF text.lang # lang THEN
+		text.fasm := lang = Lang.langFasm;
+		text.lang := lang
+	END;
+    text.comments := TRUE;
+    Lang.setCurLang(text.lang)
+END setLang;
+
+
+PROCEDURE setName* (text: tText; name: RW.tFileName);
+VAR
+    ext: RW.tFileName;
+BEGIN
+    text.fileName := name;
+    U.getFileName(name, ext, ".");
+    U.upcase(ext);
+    setLang(text, Lang.getLang(ext))
+END setName;
+
+
+PROCEDURE getPos* (text: tText; VAR x, y: INTEGER);
+BEGIN
+    x := text.cursor.X + 1;
+    y := text.cursor.Y + 1
+END getPos;
+
+
+PROCEDURE getScroll* (text: tText; VAR x, y: INTEGER);
+BEGIN
+    x := text.scroll.X;
+    y := text.scroll.Y
+END getScroll;
+
+
+PROCEDURE getTextSize* (VAR x, y: INTEGER);
+BEGIN
+    x := textsize.X;
+    y := textsize.Y
+END getTextSize;
+
+
+PROCEDURE getTextRect* (VAR left, top, rigth, bottom: INTEGER);
+BEGIN
+    left := padding.left - 1;
+    top := padding.top - 1;
+    rigth := size.X - 1;
+    bottom := top + size.Y - 1;
+END getTextRect;
+
+
+PROCEDURE toggleNumbers*;
+BEGIN
+    lineNumbers := ~lineNumbers
+END toggleNumbers;
+
+
+PROCEDURE toggleIndents*;
+BEGIN
+    autoIndents := ~autoIndents
+END toggleIndents;
+
+
+PROCEDURE toggleBrackets*;
+BEGIN
+    autoBrackets := ~autoBrackets
+END toggleBrackets;
+
+
+PROCEDURE toggleTrimSpace*;
+BEGIN
+    trimSpace := ~trimSpace
+END toggleTrimSpace;
+
+
+PROCEDURE showCursor*;
+BEGIN
+	drawCursor := TRUE
+END showCursor;
+
+
+PROCEDURE hideCursor*;
+BEGIN
+	drawCursor := FALSE
+END hideCursor;
+
+
+PROCEDURE getString (src: tLine; pos, cnt: INTEGER; VAR dst: ARRAY OF WCHAR): INTEGER;
+VAR
+    i: INTEGER;
+BEGIN
+    i := 0;
+    WHILE (pos < src.length) & (cnt > 0) DO
+        IF i < LEN(dst) - 1 THEN
+            dst[i] := Lines.getChar(src, pos);
+            INC(i)
+        END;
+        INC(pos);
+        DEC(cnt)
+    END;
+    dst[i] := 0X
+    RETURN i
+END getString;
+
+
+PROCEDURE NextLine (VAR line: tLine);
+BEGIN
+    line := line.next(tLine)
+END NextLine;
+
+
+PROCEDURE PrevLine (VAR line: tLine);
+BEGIN
+    line := line.prev(tLine)
+END PrevLine;
+
+
+PROCEDURE SetColor (textColor, backColor: INTEGER);
+BEGIN
+    G.SetTextColor(canvas, textColor);
+    G.SetBkColor(canvas, backColor)
+END SetColor;
+
+
+PROCEDURE ProcessComments (line: tLine; VAR depth, pos: INTEGER; minDepth, n: INTEGER; lang: INTEGER);
+VAR
+    cond: INTEGER;
+BEGIN
+    cond := 0;
+    WHILE (pos <= n) & (depth > minDepth) DO
+        Lang.comments(line, depth, cond, pos, n, lang);
+        INC(pos)
+    END;
+    DEC(pos)
+END ProcessComments;
+
+
+PROCEDURE getLine2 (text: tText; n: INTEGER): tLine;
+VAR
+	item: tLine;
+BEGIN
+	IF (0 <= n) & (n < text.count) THEN
+		item := Lines.getVectorItem(text.LinesVector, n)
+	ELSE
+		item := NIL
+	END
+	RETURN item
+END getLine2;
+
+
+PROCEDURE Comments (text: tText);
+VAR
+	line: tLine;
+	i, k, cout: INTEGER;
+BEGIN
+	IF text.smallChange = 1 THEN
+		line := getLine2(text, text.cursor.Y);
+		IF line.prev # NIL THEN
+			line.cin := line.prev(tLine).cout
+		ELSE
+			line.cin := 0
+		END;
+		cout := line.cout;
+		line.cout := line.cin;
+		i := 0;
+		ProcessComments(line, line.cout, i, -1, line.length - 1, text.lang);
+		IF line.cout # cout THEN
+			text.smallChange := 0;
+			Comments(text)
+		END
+	ELSE
+		Lines.destroyVector(text.LinesVector);
+		text.LinesVector := Lines.createVector(text.count);
+		k := 0;
+		line := text.first(tLine);
+		Lines.setVectorItem(text.LinesVector, k, line);
+		INC(k);
+		line.cin := 0;
+		line.cout := 0;
+		i := 0;
+		ProcessComments(line, line.cout, i, -1, line.length - 1, text.lang);
+		NextLine(line);
+		WHILE line # NIL DO
+			Lines.setVectorItem(text.LinesVector, k, line);
+			INC(k);
+			line.cin := line.prev(tLine).cout;
+			line.cout := line.cin;
+			i := 0;
+			ProcessComments(line, line.cout, i, -1, line.length - 1, text.lang);
+			NextLine(line)
+		END
+	END;
+	text.smallChange := 0;
+	text.comments := FALSE
+END Comments;
+
+
+PROCEDURE leadingSpaces (line: tLine): INTEGER;
+VAR
+    i: INTEGER;
+BEGIN
+    i := 0;
+    WHILE Lines.isSpace(Lines.getChar(line, i)) DO
+        INC(i)
+    END
+    RETURN i
+END leadingSpaces;
+
+
+PROCEDURE parse (text: tText; line: tLine; y: INTEGER; backColor: INTEGER; lang: INTEGER);
+VAR
+    c: WCHAR;
+    i, n, k: INTEGER;
+    cond, depth: INTEGER;
+    color: INTEGER;
+    hex: BOOLEAN;
+    isDgt: PROCEDURE (c: WCHAR): BOOLEAN;
+
+
+    PROCEDURE PrintLex (text: tText; line: tLine; lexStart, lexEnd: INTEGER; y: INTEGER; color, backColor: INTEGER);
+    VAR
+        lexLen: INTEGER;
+    BEGIN
+        SetColor(color, backColor);
+        lexLen := MAX(MIN(line.length - lexStart, lexEnd - lexStart + 1), 0);
+        G.TextOut(canvas, padding.left + (lexStart - text.scroll.X) * charWidth, y, Lines.getPChar(line, lexStart), lexLen, color)
+    END PrintLex;
+
+
+    PROCEDURE PrintComment (text: tText; line: tLine; VAR depth, i: INTEGER; w, y: INTEGER; backColor: INTEGER);
+    VAR
+        lexStart: INTEGER;
+        color: INTEGER;
+    BEGIN
+        IF (text.lang = Lang.langLua) & ~ODD(depth) THEN
+            color := colors.string
+        ELSIF (text.lang = Lang.langIni) & (depth = 1) THEN
+            color := colors.key2
+        ELSIF (text.lang = Lang.langPascal) & (depth = 3) THEN
+            color := colors.key3
+        ELSE
+            color := colors.comment
+        END;
+        lexStart := MAX(i - w, 0);
+        ProcessComments(line, depth, i, 0, line.length - 1, text.lang);
+        PrintLex(text, line, lexStart, i, y, color, backColor)
+    END PrintComment;
+
+
+    PROCEDURE cap (c: WCHAR): WCHAR;
+    BEGIN
+        IF U.cap(c) THEN END
+        RETURN c
+    END cap;
+
+
+    PROCEDURE UL (c: WCHAR): BOOLEAN;
+        RETURN (cap(c) = "U") OR (cap(c) = "L")
+    END UL;
+
+
+    PROCEDURE FL (c: WCHAR): BOOLEAN;
+        RETURN (cap(c) = "F") OR (cap(c) = "L")
+    END FL;
+
+
+    PROCEDURE ident (text: tText; VAR i: INTEGER; first, y: INTEGER; line: tLine; backColor: INTEGER; cs: BOOLEAN);
+    VAR
+        c: WCHAR;
+        lexLen: INTEGER;
+        s: ARRAY 32 OF WCHAR;
+        color: INTEGER;
+    BEGIN
+        c := Lines.getChar(line, i);
+        WHILE U.isLetter(c) OR (c = "_") OR U.isDigit(c) DO
+            INC(i);
+            c := Lines.getChar(line, i);
+        END;
+        DEC(i);
+        lexLen := getString(line, first, i - first + 1, s);
+        IF ~cs THEN
+            U.upcase16(s)
+        END;
+        IF Lang.isKey(s, text.lang, 1) THEN
+            color := colors.key1
+        ELSIF Lang.isKey(s, text.lang, 2) THEN
+            color := colors.key2
+        ELSIF Lang.isKey(s, text.lang, 3) THEN
+            color := colors.key3
+        ELSE
+            color := colors.text
+        END;
+        IF color # colors.text THEN
+            PrintLex(text, line, first, i, y, color, backColor)
+        END
+    END ident;
+
+
+    PROCEDURE String (text: tText; line: tLine; VAR i: INTEGER; y: INTEGER; backColor: INTEGER);
+    VAR
+        k, j, Start, End: INTEGER;
+        c: WCHAR;
+    BEGIN
+        k := i;
+        Lang.SkipString(line, i, line.length - 1, text.lang);
+        PrintLex(text, line, k, i, y, colors.string, backColor);
+        IF text.lang IN Lang.escLang THEN
+	        Start := k + 1;
+	        End := i - 1;
+	        k := Start;
+	        WHILE k <= End DO
+	        	c := Lines.getChar(line, k);
+	        	IF c = "\" THEN
+	        		j := k;
+	        		Lang.SkipEsc(line, k, line.length - 1, text.lang);
+	        		PrintLex(text, line, j, k, y, colors.escape, backColor)
+	        	END;
+	        	INC(k)
+	        END
+        END
+    END String;
+
+
+BEGIN
+    depth := line.cin;
+    n := line.length - 1;
+    i := 0;
+    IF (depth > 0) & (n >= 0) THEN
+        PrintComment(text, line, depth, i, 2, y, backColor)
+    END;
+    cond := 0;
+    WHILE i <= n DO
+        c := Lines.getChar(line, i);
+
+        IF lang = Lang.langFasm THEN
+
+            IF c = ";" THEN
+                PrintLex(text, line, i, n, y, colors.comment, backColor);
+                i := n
+            ELSIF (c = "'") OR (c = '"') THEN
+                String(text, line, i, y, backColor)
+            ELSIF (U.isLetter(c) OR (c = "_")) THEN
+                ident(text, i, i, y, line, backColor, Lang.isCS(lang))
+            ELSIF U.isDigit(c) THEN
+                hex := FALSE;
+                k := i;
+                INC(i);
+                c := Lines.getChar(line, i);
+                IF (cap(c) = "X") & (Lines.getChar(line, i - 1) = "0") THEN
+                    INC(i);
+                    hex := TRUE
+                END;
+
+                WHILE U.isHex(cap(Lines.getChar(line, i))) DO
+                    INC(i)
+                END;
+
+                IF (cap(Lines.getChar(line, i)) = "H") & ~hex THEN
+                    INC(i)
+                END;
+
+                DEC(i);
+                PrintLex(text, line, k, i, y, colors.num, backColor)
+            END
+
+        ELSIF (lang = Lang.langC) OR (lang = Lang.langJSON) THEN
+
+	        IF depth = 0 THEN
+	            IF c = "/" THEN
+	                IF cond = 0 THEN
+	                    cond := 1
+	                ELSE
+	                    PrintLex(text, line, i - 1, n, y, colors.comment, backColor);
+	                    cond := 0;
+	                    i := n
+	                END
+	            ELSIF (c = "*") & (cond = 1) THEN
+	                depth := 1;
+	                INC(i);
+	                PrintComment(text, line, depth, i, 2, y, backColor);
+	                cond := 0
+	            ELSIF U.isLetter(c) OR (c = "_") OR (c = "'") OR (c = '"') THEN
+	            	k := i;
+	            	IF (c = "'") OR (c = '"') THEN
+	            		String(text, line, i, y, backColor);
+	            	ELSE
+	            		ident(text, i, i - ORD((lang = Lang.langC) & (i > 0) & (Lines.getChar(line, i - 1) = "#")), y, line, backColor, Lang.isCS(lang))
+	            	END;
+	                IF lang = Lang.langJSON THEN
+		                WHILE Lines.isSpace(Lines.getChar(line, i + 1)) DO
+		                	INC(i)
+		                END;
+		                IF Lines.getChar(line, i + 1) = ":" THEN
+		                	PrintLex(text, line, k, i, y, colors.key1, backColor)
+		                END
+	                END;
+	                cond := 0
+	            ELSIF U.isDigit(c) THEN
+	                k := i;
+	                INC(i);
+	                c := Lines.getChar(line, i);
+	                IF c = "." THEN
+	                    DEC(i);
+	                    c := Lines.getChar(line, i)
+	                END;
+	                IF (cap(c) = "X") & (Lines.getChar(line, i - 1) = "0") THEN
+	                    REPEAT
+	                        INC(i);
+	                        c := Lines.getChar(line, i)
+	                    UNTIL ~U.isHex(cap(c));
+	                    IF UL(c) THEN
+	                        INC(i)
+	                    END
+	                ELSIF UL(c) THEN
+	                    INC(i)
+	                ELSIF U.isDigit(c) THEN
+	                    REPEAT
+	                        INC(i)
+	                    UNTIL ~U.isDigit(Lines.getChar(line, i));
+	                    c := Lines.getChar(line, i);
+	                    IF UL(c) THEN
+	                        INC(i)
+	                    ELSIF c = "." THEN
+	                        INC(i);
+	                        WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                            INC(i)
+	                        END;
+	                        c := Lines.getChar(line, i);
+	                        IF cap(c) = "E" THEN
+	                            INC(i);
+	                            c := Lines.getChar(line, i);
+	                            IF (c = "+") OR (c = "-") THEN
+	                                INC(i)
+	                            END;
+	                            IF U.isDigit(Lines.getChar(line, i)) THEN
+	                                WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                                    INC(i)
+	                                END;
+	                                c := Lines.getChar(line, i);
+	                                IF FL(c) THEN
+	                                    INC(i)
+	                                END
+	                            END
+	                        ELSIF FL(c) THEN
+	                            INC(i)
+	                        END
+	                    END
+	                END;
+	                DEC(i);
+	                PrintLex(text, line, k, i, y, colors.num, backColor);
+	                cond := 0
+	            ELSE
+	                cond := 0
+	            END
+	        ELSIF depth = 1 THEN
+	            IF c = "*" THEN
+	                cond := 1
+	            ELSIF (c = "/") & (cond = 1) THEN
+	                cond := 0;
+	                depth := 0
+	            ELSE
+	                cond := 0
+	            END
+	        END
+
+        ELSIF lang = Lang.langOberon THEN
+
+	        IF (depth = 0) & (c = "/") THEN
+	            IF cond = 3 THEN
+	                PrintLex(text, line, i - 1, n, y, colors.comment, backColor);
+	                cond := 0;
+	                i := n
+	            ELSE
+	                cond := 3
+	            END
+	        ELSIF (depth = 0) & ((c = "'") OR (c = '"')) THEN
+	            String(text, line, i, y, backColor);
+	            cond := 0
+	        ELSIF (depth = 0) & U.isDigit(c) THEN
+	            color := colors.num;
+	            k := i;
+	            INC(i);
+	            WHILE U.isHex(Lines.getChar(line, i)) DO
+	                INC(i)
+	            END;
+	            IF i <= n THEN
+	                IF Lines.getChar(line, i) = "." THEN
+	                    INC(i);
+	                    IF Lines.getChar(line, i) = "." THEN
+	                        DEC(i)
+	                    END;
+	                    WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                        INC(i)
+	                    END;
+	                    IF Lines.getChar(line, i) = "E" THEN
+	                        INC(i);
+	                        IF (Lines.getChar(line, i) = "+") OR (Lines.getChar(line, i) = "-") THEN
+	                            INC(i)
+	                        END;
+	                        WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                            INC(i)
+	                        END
+	                    END
+	                ELSIF Lines.getChar(line, i) = "H" THEN
+	                    INC(i)
+	                ELSIF Lines.getChar(line, i) = "X" THEN
+	                    color := colors.string;
+	                    INC(i)
+	                END
+	            END;
+	            DEC(i);
+	            PrintLex(text, line, k, i, y, color, backColor);
+	            cond := 0
+	        ELSIF (depth = 0) & (U.isLetter(c) OR (c = "_")) THEN
+	            ident(text, i, i, y, line, backColor, Lang.isCS(lang));
+	            cond := 0
+	        ELSIF c = "(" THEN
+	            cond := 1
+	        ELSIF c = "*" THEN
+	            IF cond = 1 THEN
+	                INC(depth);
+	                INC(i);
+	                PrintComment(text, line, depth, i, 2, y, backColor);
+	                cond := 0
+	            ELSE
+	                cond := 2
+	            END
+	        ELSIF c = ")" THEN
+	            IF cond = 2 THEN
+	                IF depth > 0 THEN
+	                    DEC(depth)
+	                END
+	            END;
+	            cond := 0
+	        ELSE
+	            cond := 0
+	        END
+
+        ELSIF lang = Lang.langLua THEN
+
+	        IF depth = 0 THEN
+	            IF c = "-" THEN
+	                IF cond = 1 THEN
+	                    IF Lang.LuaLong(line, i + 1) >= 0 THEN
+	                        depth := Lang.LuaLong(line, i + 1)*2 + 1;
+	                        INC(i);
+	                        PrintComment(text, line, depth, i, 2, y, backColor)
+	                    ELSE
+	                        PrintLex(text, line, i - 1, n, y, colors.comment, backColor);
+	                        i := n
+	                    END;
+	                    cond := 0
+	                ELSE
+	                    cond := 1
+	                END
+	            ELSIF c = "[" THEN
+	                cond := 0;
+	                k := Lang.LuaLong(line, i);
+	                IF k >= 0 THEN
+	                    depth := (k + 1)*2;
+	                    INC(i, 2);
+	                    PrintComment(text, line, depth, i, 2, y, backColor);
+	                    cond := 0
+	                END
+	            ELSIF (c = "'") OR (c = '"') THEN
+	                String(text, line, i, y, backColor);
+	                cond := 0
+	            ELSIF U.isDigit(c) THEN
+	                k := i;
+	                IF (c = "0") & (cap(Lines.getChar(line, i + 1)) = "X") THEN
+	                    isDgt := U.isHex;
+	                    hex := TRUE;
+	                    INC(i, 2)
+	                ELSE
+	                    isDgt := U.isDigit;
+	                    hex := FALSE
+	                END;
+	                WHILE isDgt(cap(Lines.getChar(line, i))) DO
+	                    INC(i)
+	                END;
+	                IF Lines.getChar(line, i) = "." THEN
+	                    INC(i);
+	                    IF Lines.getChar(line, i) = "." THEN
+	                        DEC(i)
+	                    END;
+	                    WHILE isDgt(cap(Lines.getChar(line, i))) DO
+	                        INC(i)
+	                    END
+	                END;
+	                IF (cap(Lines.getChar(line, i)) = "E") OR hex & (cap(Lines.getChar(line, i)) = "P") THEN
+	                    INC(i);
+	                    IF (Lines.getChar(line, i) = "-") OR (Lines.getChar(line, i) = "+") THEN
+	                        INC(i)
+	                    END;
+	                    WHILE isDgt(cap(Lines.getChar(line, i))) DO
+	                        INC(i)
+	                    END
+	                END;
+	                DEC(i);
+	                PrintLex(text, line, k, i, y, colors.num, backColor);
+	                cond := 0
+	            ELSIF U.isLetter(c) OR (c = "_") THEN
+	                ident(text, i, i, y, line, backColor, Lang.isCS(lang));
+	                cond := 0
+	            ELSE
+	                cond := 0
+	            END
+
+	        ELSIF depth > 0 THEN
+	            IF (cond = 0) & (c = "]") THEN
+	                cond := 1
+	            ELSIF (cond >= 1) & (c = "=") THEN
+	                INC(cond)
+	            ELSIF (cond >= 1) & (c = "]") & (cond * 2 - depth MOD 2 = depth) THEN
+	                depth := 0;
+	                cond := 0
+	            ELSE
+	                cond := 0
+	            END
+	        END
+
+        ELSIF lang = Lang.langPascal THEN
+
+	        IF depth = 0 THEN
+	            IF c = "(" THEN
+	                cond := 1
+	            ELSIF (c = "*") & (cond = 1) THEN
+	                depth := 2;
+	                INC(i);
+	                PrintComment(text, line, depth, i, 2, y, backColor);
+	                cond := 0
+	            ELSIF c = "/" THEN
+	                IF cond = 2 THEN
+	                    PrintLex(text, line, i - 1, n, y, colors.comment, backColor);
+	                    cond := 0;
+	                    i := n
+	                ELSE
+	                    cond := 2
+	                END
+	            ELSIF c = "'" THEN
+	                String(text, line, i, y, backColor);
+	                cond := 0
+	            ELSIF c = "{" THEN
+	                IF Lines.getChar(line, i + 1) = "$" THEN
+	                    depth := 3
+	                ELSE
+	                    depth := 1
+	                END;
+	                INC(i);
+	                PrintComment(text, line, depth, i, 1, y, backColor);
+	                cond := 0
+	            ELSIF c = "#" THEN
+	                k := i;
+	                INC(i);
+	                WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                    INC(i)
+	                END;
+	                DEC(i);
+	                PrintLex(text, line, k, i, y, colors.string, backColor);
+	                cond := 0
+	            ELSIF c = "$" THEN
+	                IF (i > 0 ) & (Lines.getChar(line, i - 1) = "#") THEN
+	                    color := colors.string
+	                ELSE
+	                    color := colors.num
+	                END;
+	                k := i;
+	                INC(i);
+	                WHILE U.isHex(cap(Lines.getChar(line, i))) DO
+	                    INC(i)
+	                END;
+	                DEC(i);
+	                PrintLex(text, line, k, i, y, color, backColor);
+	                cond := 0
+	            ELSIF U.isDigit(c) THEN
+	                k := i;
+	                WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                    INC(i)
+	                END;
+	                IF Lines.getChar(line, i) = "." THEN
+	                    INC(i);
+	                    IF Lines.getChar(line, i) = "." THEN
+	                        DEC(i)
+	                    END;
+	                    WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                        INC(i)
+	                    END;
+	                    IF cap(Lines.getChar(line, i)) = "E" THEN
+	                        INC(i);
+	                        IF (Lines.getChar(line, i) = "-") OR (Lines.getChar(line, i) = "+") THEN
+	                            INC(i)
+	                        END;
+	                        WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                            INC(i)
+	                        END
+	                    END
+	                END;
+	                DEC(i);
+	                PrintLex(text, line, k, i, y, colors.num, backColor);
+	                cond := 0
+	            ELSIF (U.isLetter(c) OR (c = "_")) THEN
+	                ident(text, i, i, y, line, backColor, Lang.isCS(lang));
+	                cond := 0
+	            ELSE
+	                cond := 0
+	            END
+	        ELSIF depth IN {1, 3} THEN
+	            IF c = "}" THEN
+	                depth := 0
+	            END
+	        ELSIF depth = 2 THEN
+	            IF c = "*" THEN
+	                cond := 1
+	            ELSIF (c = ")") & (cond = 1) THEN
+	                depth := 0;
+	                cond := 0
+	            ELSE
+	                cond := 0
+	            END
+	        END
+
+        ELSIF lang = Lang.langIni THEN
+
+	        IF depth = 0 THEN
+	            IF ((c = ";") OR (c = "#")) & (leadingSpaces(line) = i) THEN
+	                PrintLex(text, line, i, n, y, colors.comment, backColor);
+	                i := n
+	            ELSIF c = '"' THEN
+	                String(text, line, i, y, backColor)
+	            ELSIF c = "[" THEN
+	                depth := 1;
+	                INC(i);
+	                PrintComment(text, line, depth, i, 1, y, backColor)
+	            ELSIF U.isDigit(c) THEN
+	                k := i;
+	                WHILE U.isDigit(Lines.getChar(line, i)) DO
+	                    INC(i)
+	                END;
+	                DEC(i);
+	                PrintLex(text, line, k, i, y, colors.num, backColor)
+	            ELSIF (U.isLetter(c) OR (c = "_")) THEN
+	                ident(text, i, i, y, line, backColor, Lang.isCS(lang))
+	            END
+	        ELSIF depth = 1 THEN
+	            IF c = "]" THEN
+	                depth := 0
+	            END
+	        END
+
+        END;
+        INC(i)
+    END
+END parse;
+
+
+PROCEDURE plain (text: tText): CB.tBuffer;
+VAR
+    buf: CB.tBuffer;
+    size: INTEGER;
+    line: tLine;
+BEGIN
+    size := 0;
+    line := text.first(tLine);
+    WHILE line # NIL DO
+        line.pos := size;
+        INC(size, line.length);
+        NextLine(line);
+        IF line # NIL THEN
+            INC(size, CB.lenEOL)
+        END
+    END;
+    buf := CB.create(size + 2);
+    line := text.first(tLine);
+    WHILE line # NIL DO
+        CB.append(buf, line, 0, line.length - 1);
+        NextLine(line);
+        IF line # NIL THEN
+            CB.eol(buf)
+        END
+    END;
+    CB.appends(buf, 0X, 0, 0);
+    CB.appends(buf, 0X, 0, 0)
+    RETURN buf
+END plain;
+
+
+PROCEDURE search* (text: tText; s: ARRAY OF WCHAR; cs, whole: BOOLEAN): BOOLEAN;
+VAR
+	pos: List.tItem;
+	res: BOOLEAN;
+	plainText, idxData: Search.tBuffer;
+BEGIN
+	res := TRUE;
+	plainText := NIL;
+	idxData := NIL;
+	WHILE text.foundList.count # 0 DO
+		pos := List.pop(text.foundList);
+		DISPOSE(pos)
+	END;
+	text.whole := whole;
+	text.cs := cs;
+	text.searchText := s;
+	IF ~cs THEN
+		U.upcase16(text.searchText)
+	END;
+	IF text.searchText # "" THEN
+		plainText := plain(text);
+		idxData := Search.index(plainText, idxTable, cs);
+		Search.find(plainText, idxTable, text.searchText, whole, text.foundList);
+		res := text.foundList.count > 0
+	END;
+	CB.destroy(plainText);
+	CB.destroy(idxData);
+	text.search := FALSE;
+	text.foundSel := 0
+	RETURN res
+END search;
+
+
+PROCEDURE modify (text: tText);
+BEGIN
+    text.modified := TRUE;
+    text.comments := TRUE;
+    text.search := TRUE;
+    text.guard := TRUE
+END modify;
+
+
+PROCEDURE setEnc* (text: tText; enc: INTEGER);
+BEGIN
+	IF text.enc # enc THEN
+		ChangeLog.changeInt(text.enc, enc);
+		text.enc := enc;
+		modify(text)
+	END
+END setEnc;
+
+
+PROCEDURE setEol* (text: tText; eol: INTEGER);
+BEGIN
+	IF text.eol # eol THEN
+		ChangeLog.changeInt(text.eol, eol);
+		text.eol := eol;
+		modify(text)
+	END
+END setEol;
+
+
+PROCEDURE getEnc* (text: tText): INTEGER;
+	RETURN text.enc
+END getEnc;
+
+
+PROCEDURE getEol* (text: tText): INTEGER;
+	RETURN text.eol
+END getEol;
+
+
+PROCEDURE DelLine (text: tText; line: tLine);
+BEGIN
+    List._delete(text, line);
+    Lines.destroy(line);
+    modify(text)
+END DelLine;
+
+
+PROCEDURE setSelect (text: tText);
+BEGIN
+    IF text.select = text.cursor THEN
+        text.select2^ := text.cursor^;
+        text.select := text.select2
+    END
+END setSelect;
+
+
+PROCEDURE resetSelect* (text: tText);
+BEGIN
+    text.select := text.cursor
+END resetSelect;
+
+
+PROCEDURE getLine (text: tText; n: INTEGER): tLine;
+VAR
+	item: List.tItem;
+BEGIN
+	item := List.getItem(text, n)
+	RETURN item(tLine)
+END getLine;
+
+
+PROCEDURE SetPos* (text: tText; x, y: INTEGER);
+VAR
+    deltaY, n, L, R: INTEGER;
+    cursor: pPoint;
+    c: WCHAR;
+   (* trimLength: INTEGER; *)
+BEGIN
+    cursor := text.cursor;
+    y := MIN(MAX(y, 0), text.count - 1);
+    deltaY := y - cursor.Y;
+    IF deltaY # 0 THEN
+        cursor.Y := y;
+(*        trimLength := Lines.trimLength(text.curLine);
+        IF text.curLine.length # trimLength THEN
+            Lines.setChar(text.curLine, trimLength, 0X);
+            text.curLine.length := trimLength
+        END;*)
+        IF deltaY = 1 THEN
+            NextLine(text.curLine)
+        ELSIF deltaY = -1 THEN
+            PrevLine(text.curLine)
+        ELSE
+            text.curLine := getLine(text, y)
+        END
+    END;
+    cursor.X := MIN(MAX(x, 0), text.curLine.length);
+    c := Lines.getChar(text.curLine, cursor.X);
+    IF c = TAB1 THEN
+        n := cursor.X;
+        WHILE Lines.getChar(text.curLine, n) = TAB1 DO
+            INC(n)
+        END;
+        R := n - cursor.X;
+        n := cursor.X;
+        WHILE Lines.getChar(text.curLine, n) # TAB DO
+            DEC(n)
+        END;
+        L := cursor.X - n;
+        IF L < R THEN
+            DEC(cursor.X, L)
+        ELSE
+            INC(cursor.X, R)
+        END
+    END;
+    IF text.scroll.Y > cursor.Y THEN
+        text.scroll.Y := cursor.Y
+    ELSIF text.scroll.Y + textsize.Y <= cursor.Y THEN
+        text.scroll.Y := cursor.Y - textsize.Y + 1
+    END;
+    IF text.scroll.X > cursor.X THEN
+        text.scroll.X := cursor.X
+    ELSIF text.scroll.X + textsize.X <= cursor.X THEN
+        text.scroll.X := cursor.X - textsize.X + 1
+    END;
+    IF (text.select.Y = cursor.Y) & (text.select.X > text.curLine.length) THEN
+        text.select.X := text.curLine.length
+    END;
+    setSelect(text);
+    text.foundSel := 0;
+    ShowCursor;
+    text.CurX := -1
+END SetPos;
+
+
+PROCEDURE getSelect (text: tText; VAR selBeg, selEnd: tPoint);
+BEGIN
+    selBeg := text.cursor^;
+    selEnd := text.select^;
+    IF (selBeg.Y > selEnd.Y) OR (selBeg.Y = selEnd.Y) & (selBeg.X > selEnd.X) THEN
+        selBeg := text.select^;
+        selEnd := text.cursor^
+    END
+END getSelect;
+
+
+PROCEDURE selected* (text: tText): BOOLEAN;
+    RETURN (text.cursor.X # text.select.X) OR (text.cursor.Y # text.select.Y)
+END selected;
+
+
+PROCEDURE delSelect (text: tText);
+VAR
+    selBeg, selEnd: tPoint;
+    line, last, cur: tLine;
+BEGIN
+    getSelect(text, selBeg, selEnd);
+    IF (selBeg.Y = selEnd.Y) & (selBeg.X < selEnd.X) THEN
+        line := text.curLine;
+        Lines.delCharN(line, selBeg.X, selEnd.X - selBeg.X);
+        Lines.modify(line);
+        text.cursor^ := selBeg;
+        resetSelect(text);
+        SetPos(text, text.cursor.X, text.cursor.Y);
+        modify(text)
+    ELSIF selBeg.Y < selEnd.Y THEN
+        SetPos(text, selBeg.X, selBeg.Y);
+        line := text.curLine;
+        Lines.delCharN(line, selBeg.X, line.length - selBeg.X);
+        last := getLine(text, selEnd.Y);
+        Lines.delCharN(last, 0, selEnd.X);
+        cur := line.next(tLine);
+        WHILE cur # last DO
+            DelLine(text, cur);
+            cur := line.next(tLine)
+        END;
+        resetSelect(text);
+        SetPos(text, text.cursor.X, text.cursor.Y);
+        pdelete(text);
+        modify(text)
+    END;
+    resetSelect(text)
+END delSelect;
+
+
+PROCEDURE delete (text: tText);
+VAR
+    i, n: INTEGER;
+    nextLine, curLine: tLine;
+BEGIN
+    IF selected(text) THEN
+        delSelect(text)
+    ELSE
+        i := text.cursor.X;
+        curLine := text.curLine;
+        IF i < curLine.length THEN
+            n := i;
+            INC(i);
+            IF Lines.getChar(curLine, i - 1) = TAB THEN
+                WHILE Lines.getChar(curLine, i) = TAB1 DO
+                    INC(i)
+                END
+            END;
+            Lines.delCharN(curLine, n, i - n);
+            Lines.modify(curLine);
+            modify(text)
+        ELSE
+            nextLine := curLine.next(tLine);
+            IF nextLine # NIL THEN
+                Lines.insert2(curLine, i, nextLine);
+                DelLine(text, nextLine);
+                Lines.modify(curLine);
+                modify(text)
+            END
+        END
+    END;
+    setSelect(text)
+END delete;
+
+
+PROCEDURE move (text: tText; d: INTEGER);
+VAR
+    pos: INTEGER;
+BEGIN
+    pos := text.cursor.X + d;
+    WHILE Lines.getChar(text.curLine, pos) = TAB1 DO
+        INC(pos, d)
+    END;
+    SetPos(text, pos, text.cursor.Y)
+END move;
+
+
+PROCEDURE BkSpace (text: tText);
+VAR
+    i, k, n: INTEGER;
+    curLine, line, line2: tLine;
+BEGIN
+    IF selected(text) THEN
+        delSelect(text)
+    ELSE
+        resetSelect(text);
+        curLine := text.curLine;
+        IF text.cursor.X > 0 THEN
+        	INC(text.smallChange);
+            i := text.cursor.X;
+            IF autoIndents THEN
+	            n := leadingSpaces(curLine)
+            ELSE
+    	        n := 0
+            END;
+            modify(text);
+            IF n < i THEN
+                move(text, -1);
+                delete(text)
+            ELSE
+                n := i;
+                line := curLine.prev(tLine);
+                line2 := line;
+                k := n;
+                WHILE (line # NIL) & (k >= n) DO
+                    IF Lines.trimLength(line) # 0 THEN
+                        k := leadingSpaces(line);
+                        line2 := line;
+                    END;
+                    PrevLine(line)
+                END;
+                IF k >= n THEN
+                    k := 0
+                END;
+                n := k;
+                Lines.delCharN(curLine, 0, i);
+                Lines.insert3(curLine, 0, k);
+                WHILE k > 0 DO
+                    Lines.setChar(curLine, k - 1, Lines.getChar(line2, k - 1));
+                    DEC(k)
+                END;
+                Lines.modify(curLine);
+                SetPos(text, n, text.cursor.Y)
+            END
+        ELSE
+            PrevLine(curLine);
+            IF curLine # NIL THEN
+                SetPos(text, curLine.length, text.cursor.Y - 1);
+                delete(text)
+            END
+        END
+    END;
+    setSelect(text)
+END BkSpace;
+
+
+PROCEDURE enter (text: tText);
+VAR
+    n: INTEGER;
+    curLine, newLine, line, line2: tLine;
+BEGIN
+    delSelect(text);
+    newLine := Lines.create(FALSE);
+    modify(text);
+    curLine := text.curLine;
+    IF text.cursor.X < curLine.length THEN
+        Lines.wrap(curLine, newLine, text.cursor.X);
+        Lines.modify(curLine)
+    END;
+    List._insert(text, curLine, newLine);
+    SetPos(text, 0, text.cursor.Y + 1);
+    line := text.curLine.prev(tLine);
+    n := -1;
+    WHILE (line # NIL) & (n = -1) & autoIndents DO
+        IF (*line.length*)Lines.trimLength(line) # 0 THEN
+            n := leadingSpaces(line);
+            line2 := line
+        END;
+        PrevLine(line)
+    END;
+    IF n = -1 THEN
+        n := 0
+    END;
+    Lines.insert3(text.curLine, 0, n);
+    SetPos(text, n, text.cursor.Y);
+    resetSelect(text);
+    WHILE n > 0 DO
+        Lines.setChar(text.curLine, n - 1, Lines.getChar(line2, n - 1));
+        DEC(n)
+    END;
+    Lines.modify(newLine);
+    SetPos(text, text.cursor.X, text.cursor.Y)
+END enter;
+
+
+PROCEDURE incIndent (line: tLine);
+VAR
+	c: WCHAR;
+	i: INTEGER;
+BEGIN
+	Lines.modify(line);
+	Lines.insert3(line, 0, Lines.tab);
+	IF Lines.tabs THEN
+		c := TAB1
+	ELSE
+		c := SPACE
+	END;
+	i := Lines.tab - 1;
+	WHILE i >= 0 DO
+		Lines.setChar(line, i, c);
+		DEC(i)
+	END;
+	IF Lines.tabs THEN
+		Lines.setChar(line, 0, TAB)
+	END
+END incIndent;
+
+
+PROCEDURE decIndent (line: tLine): BOOLEAN;
+VAR
+	n: INTEGER;
+BEGIN
+	n := leadingSpaces(line);
+	IF n > 0 THEN
+		Lines.delCharN(line, 0, MIN(Lines.tab, n));
+		Lines.modify(line)
+	END
+	RETURN n > 0
+END decIndent;
+
+
+PROCEDURE Indent* (text: tText; incr: BOOLEAN);
+VAR
+    i: INTEGER;
+    line: tLine;
+    selBeg, selEnd: tPoint;
+    modified: BOOLEAN;
+BEGIN
+	getSelect(text, selBeg, selEnd);
+	i := selEnd.Y - selBeg.Y + 1;
+	line := getLine2(text, selBeg.Y);
+	modified := incr;
+	WHILE i > 0 DO
+		IF incr THEN
+			incIndent(line)
+		ELSE
+    		modified := decIndent(line) OR modified
+		END;
+		NextLine(line);
+		DEC(i)
+	END;
+	line := getLine2(text, selEnd.Y);
+	text.select^ := selBeg;
+	text.select.X := 0;
+	SetPos(text, line.length, selEnd.Y);
+	IF modified THEN
+		INC(text.smallChange);
+   		modify(text)
+	END
+END Indent;
+
+
+PROCEDURE input* (text: tText; code: INTEGER);
+VAR
+    curLine: tLine;
+
+
+    PROCEDURE tab (text: tText);
+    VAR
+        i, x: INTEGER;
+        curLine: tLine;
+        c: WCHAR;
+    BEGIN
+		delSelect(text);
+		curLine := text.curLine;
+		x := text.cursor.X;
+		i := Lines.tab - x MOD Lines.tab;
+		Lines.insert3(curLine, x, i);
+		SetPos(text, x + i, text.cursor.Y);
+		IF Lines.tabs THEN
+			c := TAB1
+		ELSE
+			c := SPACE
+		END;
+		WHILE i > 0 DO
+			Lines.setChar(curLine, x + i - 1, c);
+			DEC(i)
+		END;
+		IF Lines.tabs THEN
+			Lines.setChar(curLine, x + i, TAB)
+		END;
+		Lines.modify(curLine);
+		modify(text)
+    END tab;
+
+
+BEGIN
+    IF (code >= ORD(SPACE)) & (code # 127) THEN
+    	IF ~selected(text) THEN
+    		INC(text.smallChange)
+    	END;
+        delSelect(text);
+        curLine := text.curLine;
+        Lines.insert(curLine, text.cursor.X, WCHR(code));
+        IF autoBrackets THEN
+        	IF code = ORD("(") THEN
+        		code := ORD(")")
+        	ELSIF code = ORD("[") THEN
+        		code := ORD("]")
+        	ELSIF code = ORD("{") THEN
+        		code := ORD("}")
+        	ELSE
+        		code := -1
+        	END;
+        	IF code # -1 THEN
+        		Lines.insert(curLine, text.cursor.X + 1, WCHR(code))
+        	END
+        END;
+        Lines.modify(curLine);
+        modify(text);
+        SetPos(text, text.cursor.X + 1, text.cursor.Y)
+    ELSIF code = 8 THEN
+		BkSpace(text)
+    ELSIF code = -8 THEN
+    	IF selected(text) THEN
+    		Indent(text, FALSE)
+        END
+    ELSIF code = 9 THEN
+    	IF selected(text) THEN
+    		Indent(text, TRUE)
+    	ELSE
+    		INC(text.smallChange);
+	        tab(text)
+        END
+    ELSIF code = 13 THEN
+        enter(text)
+    END
+END input;
+
+
+PROCEDURE scroll* (text: tText; h, v: INTEGER);
+BEGIN
+    INC(text.scroll.X, h);
+    INC(text.scroll.Y, v);
+    text.scroll.X := MIN(MAX(text.scroll.X, 0), text.maxLength);
+    text.scroll.Y := MIN(MAX(text.scroll.Y, 0), text.count - 1)
+END scroll;
+
+
+PROCEDURE save* (text: tText; name: RW.tFileName): BOOLEAN;
+CONST
+    tempFile = "/tmp0/1/cedit~.tmp";
+VAR
+    line: tLine;
+    file: RW.tOutput;
+    res: BOOLEAN;
+    Len: INTEGER;
+BEGIN
+    ChangeLog.setGuard(text.edition);
+    file := RW.create(tempFile, text.enc, text.eol);
+    IF file # NIL THEN
+        ChangeLog.delSaved;
+        line := text.first(tLine);
+        WHILE line # NIL DO
+        	IF trimSpace THEN
+        		Len := Lines.trimLength(line)
+        	ELSE
+        		Len := line.length
+        	END;
+            RW.putString(file, line, Len);
+            NextLine(line);
+            IF line # NIL THEN
+                RW.newLine(file)
+            END
+        END;
+        res := RW.close(file)
+    ELSE
+        res := FALSE
+    END;
+    IF res THEN
+        res := File.Copy(tempFile, name);
+        IF res THEN
+            text.modified := FALSE;
+            ChangeLog.save(text.edition);
+
+	        line := text.first(tLine);
+	        WHILE line # NIL DO
+	            IF line.modified THEN
+	                Lines.save(line)
+	            END;
+	            NextLine(line)
+	        END
+        END
+    END;
+    IF File.Delete(tempFile) THEN END;
+    IF ~res THEN
+        ChangeLog.delCurSaved
+    END
+    RETURN res
+END save;
+
+
+PROCEDURE redoGuard (text: tText; guard: tGuard);
+BEGIN
+    text.edition := guard;
+    text.cursor^ := guard.cursor;
+    text.select2^ := guard.select2;
+    text.scroll := guard.scroll;
+    text.CurX := guard.CurX;
+    IF guard.selected THEN
+        text.select := text.select2
+    ELSE
+        text.select := text.cursor
+    END;
+    text.curLine := getLine(text, text.cursor.Y);
+    text.comments := TRUE;
+    text.search := TRUE
+END redoGuard;
+
+
+PROCEDURE undo* (text: tText);
+VAR
+    item: List.tItem;
+    guard: tGuard;
+BEGIN
+    guard := text.edition;
+    item := guard.prev;
+    WHILE (item # NIL) & ~(item IS tGuard) DO
+        item := item.prev
+    END;
+
+    IF item # NIL THEN
+        guard := item(tGuard);
+        text.edition := guard
+    END;
+
+    item := ChangeLog.CL.Log.first;
+    WHILE item # guard DO
+        ChangeLog.redo(item);
+        item := item.next
+    END;
+    redoGuard(text, guard);
+    ChangeLog.setGuard(guard);
+    text.modified := ~guard.saved;
+    ShowCursor
+END undo;
+
+
+PROCEDURE redo* (text: tText);
+VAR
+    item: List.tItem;
+    guard: tGuard;
+BEGIN
+    guard := text.edition;
+    item := guard.next;
+    WHILE (item # NIL) & ~(item IS tGuard) DO
+        ChangeLog.redo(item);
+        item := item.next
+    END;
+    IF item # NIL THEN
+        guard := item(tGuard);
+        redoGuard(text, guard)
+    END;
+    ChangeLog.setGuard(guard);
+    text.modified := ~guard.saved;
+    ShowCursor
+END redo;
+
+
+PROCEDURE getSelCnt* (text: tText; VAR chars, lines: INTEGER);
+VAR
+	selBeg, selEnd: tPoint;
+	first, last, line: tLine;
+
+	PROCEDURE charCnt (line: tLine; first, last: INTEGER): INTEGER;
+	VAR
+		i, res: INTEGER;
+	BEGIN
+		res := 0;
+		FOR i := first TO last DO
+			IF Lines.getChar(line, i) # TAB1 THEN
+				INC(res)
+			END
+		END
+		RETURN res
+	END charCnt;
+
+BEGIN
+	IF selected(text) THEN
+		getSelect(text, selBeg, selEnd);
+		first := getLine2(text, selBeg.Y);
+		last  := getLine2(text, selEnd.Y);
+		lines := selEnd.Y - selBeg.Y + 1;
+
+		IF lines > 1 THEN
+			chars := charCnt(first, selBeg.X, first.length - 1) + charCnt(last, 0, selEnd.X - 1) + lenEOL;
+			line := first.next(tLine);
+			WHILE line # last DO
+				INC(chars, charCnt(line, 0, line.length - 1) + lenEOL);
+				NextLine(line)
+			END
+		ELSE
+			chars := charCnt(first, selBeg.X, selEnd.X - 1)
+		END
+	ELSE
+		chars := 0;
+		lines := 0
+	END
+END getSelCnt;
+
+
+PROCEDURE copy (text: tText);
+VAR
+    selBeg, selEnd: tPoint;
+    first, line: tLine;
+    cnt, n: INTEGER;
+    buffer: CB.tBuffer;
+
+
+    PROCEDURE append (buffer: CB.tBuffer; line: tLine; first, last: INTEGER);
+    BEGIN
+        IF first <= last THEN
+            CB.append(buffer, line, first, last)
+        ELSE
+            IF U.OS = "KOS" THEN
+                CB.appends(buffer, SPACE, 0, 0)
+            END
+        END
+    END append;
+
+
+BEGIN
+    getSelect(text, selBeg, selEnd);
+
+    first := getLine2(text, selBeg.Y);
+    line := first;
+
+    n := selEnd.Y - selBeg.Y;
+    cnt := 0;
+    WHILE n >= 0 DO
+        INC(cnt, line.length + (lenEOL + ORD(U.OS = "KOS")));
+        NextLine(line);
+        DEC(n)
+    END;
+
+    buffer := CB.create(cnt + 2); (* +2 wchars EOT *)
+
+    n := selEnd.Y - selBeg.Y;
+    line := first;
+    IF n = 0 THEN
+        append(buffer, line, selBeg.X, selEnd.X - 1)
+    ELSE
+        append(buffer, line, selBeg.X, line.length - 1);
+        REPEAT
+            DEC(n);
+            CB.eol(buffer);
+            NextLine(line);
+            IF n > 0 THEN
+                append(buffer, line, 0, line.length - 1)
+            END
+        UNTIL n = 0;
+        append(buffer, line, 0, selEnd.X - 1)
+    END;
+    CB.eot(buffer);
+    CB.put(buffer);
+    CB.destroy(buffer)
+END copy;
+
+
+PROCEDURE paste (text: tText);
+VAR
+    line, newLine, curLine: tLine;
+    w: INTEGER;
+    cliptext: RW.tInput;
+    eol: BOOLEAN;
+    cursor: pPoint;
+
+
+    PROCEDURE lineWidth (line: tLine; pos: INTEGER): INTEGER;
+    VAR
+    	i, res: INTEGER;
+    	c: WCHAR;
+    BEGIN
+    	res := pos;
+    	i := 0;
+    	REPEAT
+	    	c := Lines.getChar(line, i);
+	    	IF c = TAB THEN
+	    		INC(res, Lines.tab - res MOD Lines.tab)
+	    	ELSIF c # TAB1 THEN
+	    		INC(res)
+	    	END;
+	    	INC(i)
+    	UNTIL c = 0X
+    	RETURN res - pos - 1
+    END lineWidth;
+
+
+BEGIN
+    line := Lines.create(TRUE);
+    cliptext := RW.clipboard();
+    delSelect(text);
+    cursor := text.cursor;
+    WHILE (cliptext # NIL) & (RW.getString(cliptext, line, Lines.tabs, eol) >= 0) DO
+        IF line.length > 0 THEN
+        	w := lineWidth(line, cursor.X);
+            Lines.insert2(text.curLine, cursor.X, line);
+            Lines.modify(text.curLine);
+            modify(text);
+            SetPos(text, cursor.X + w, cursor.Y);
+            resetSelect(text)
+        END;
+        IF eol THEN
+            newLine := Lines.create(FALSE);
+            modify(text);
+            curLine := text.curLine;
+            IF cursor.X < curLine.length THEN
+                Lines.wrap(curLine, newLine, cursor.X);
+                Lines.modify(curLine)
+            END;
+            List._insert(text, curLine, newLine);
+            Lines.modify(newLine);
+            SetPos(text, 0, cursor.Y + 1);
+            resetSelect(text)
+        END;
+        Lines.destroy(line);
+        line := Lines.create(TRUE)
+    END;
+    SetPos(text, cursor.X, cursor.Y);
+    Lines.destroy(line);
+    RW.destroy(cliptext)
+END paste;
+
+
+PROCEDURE searchScroll (text: tText; n: INTEGER);
+BEGIN
+    IF n - text.scroll.Y > textsize.Y - 1 THEN
+        text.scroll.Y := MAX(n - 2 * textsize.Y DIV 3, 0)
+    ELSIF n < text.scroll.Y THEN
+        text.scroll.Y := MAX(n - textsize.Y DIV 3, 0)
+    END
+END searchScroll;
+
+
+PROCEDURE goto* (text: tText; n: INTEGER): BOOLEAN;
+VAR
+    res: BOOLEAN;
+BEGIN
+    DEC(n);
+    IF (0 <= n) & (n < text.count) THEN
+        resetSelect(text);
+        searchScroll(text, n);
+        SetPos(text, 0, n);
+        res := TRUE
+    ELSE
+        res := FALSE
+    END
+    RETURN res
+END goto;
+
+
+PROCEDURE toggleLabel* (text: tText);
+BEGIN
+    text.curLine.label := ~text.curLine.label
+END toggleLabel;
+
+
+PROCEDURE gotoLabel* (text: tText; frw: BOOLEAN);
+VAR
+    line: tLine;
+    n: INTEGER;
+
+    PROCEDURE search (VAR line: tLine; VAR n: INTEGER; frw: BOOLEAN);
+    BEGIN
+        IF frw THEN
+            WHILE (line # NIL) & ~line.label DO
+                NextLine(line);
+                INC(n)
+            END
+        ELSE
+            WHILE (line # NIL) & ~line.label DO
+                PrevLine(line);
+                DEC(n)
+            END
+        END
+    END search;
+
+BEGIN
+    n := text.cursor.Y;
+    line := text.curLine;
+    IF frw THEN
+        NextLine(line);
+        INC(n)
+    ELSE
+        PrevLine(line);
+        DEC(n)
+    END;
+    search(line, n, frw);
+    IF line = NIL THEN
+        IF frw THEN
+            n := 0;
+            line := text.first(tLine)
+        ELSE
+            n := text.count - 1;
+            line := text.last(tLine)
+        END;
+        search(line, n, frw)
+    END;
+    IF line # NIL THEN
+        IF goto(text, n + 1) THEN END
+    END
+END gotoLabel;
+
+
+PROCEDURE changeCase (text: tText; upper: BOOLEAN);
+VAR
+    i: INTEGER;
+    line: tLine;
+    func: Lines.fConvert;
+BEGIN
+    line := text.curLine;
+    i := text.cursor.X - 1;
+
+    WHILE (i >= 0) & U.isLetter(Lines.getChar(line, i)) DO
+        DEC(i)
+    END;
+
+    IF upper THEN
+    	func := U.cap
+    ELSE
+    	func := U.low
+    END;
+
+    IF Lines.convert(line, i + 1, text.cursor.X - 1, func) THEN
+    	INC(text.smallChange);
+        modify(text)
+    END
+END changeCase;
+
+
+PROCEDURE chCase* (text: tText; upper: BOOLEAN);
+VAR
+    selBeg, selEnd: tPoint;
+    first, line: Lines.tLine;
+    cnt: INTEGER;
+    func: Lines.fConvert;
+    modified: BOOLEAN;
+BEGIN
+    modified := FALSE;
+    IF selected(text) THEN
+        getSelect(text, selBeg, selEnd);
+        first := getLine2(text, selBeg.Y);
+        line := first;
+        cnt := selEnd.Y - selBeg.Y;
+
+	    IF upper THEN
+	    	func := U.cap
+	    ELSE
+	    	func := U.low
+	    END;
+
+        IF cnt = 0 THEN
+            IF Lines.convert(line, selBeg.X, selEnd.X - 1, func) THEN
+                modified := TRUE
+            END
+        ELSE
+            IF Lines.convert(line, selBeg.X, line.length - 1, func) THEN
+                modified := TRUE
+            END;
+            WHILE cnt > 1 DO
+                NextLine(line);
+                IF Lines.convert(line, 0, line.length - 1, func) THEN
+                    modified := TRUE
+                END;
+                DEC(cnt)
+            END;
+            NextLine(line);
+            IF Lines.convert(line, 0, selEnd.X - 1, func) THEN
+                modified := TRUE
+            END
+        END
+    END;
+    IF modified THEN
+    	INC(text.smallChange);
+        modify(text)
+    END
+END chCase;
+
+
+PROCEDURE UpDown (text: tText; step: INTEGER);
+VAR
+    temp: INTEGER;
+BEGIN
+    IF text.CurX = -1 THEN
+        text.CurX := text.cursor.X
+    END;
+    temp := text.CurX;
+    SetPos(text, temp, text.cursor.Y + step);
+    text.CurX := temp
+END UpDown;
+
+
+PROCEDURE delLine* (text: tText);
+BEGIN
+	text.smallChange := 2;
+    resetSelect(text);
+    IF text.curLine.length > 0 THEN
+        Lines.delCharN(text.curLine, 0, text.curLine.length)
+    END;
+    SetPos(text, 0, text.cursor.Y);
+    IF text.cursor.Y = text.count - 1 THEN
+        BkSpace(text)
+    ELSE
+        delete(text)
+    END
+END delLine;
+
+
+PROCEDURE dupLine* (text: tText);
+VAR
+    newLine, curLine: tLine;
+BEGIN
+    curLine := text.curLine;
+    newLine := Lines.create(FALSE);
+    modify(text);
+    Lines.insert3(newLine, 0, curLine.length);
+    List._insert(text, curLine, newLine);
+    Lines.move(curLine, newLine);
+    Lines.modify(newLine)
+END dupLine;
+
+
+PROCEDURE MoveLines* (text: tText; down: BOOLEAN);
+VAR
+	last, first, line: tLine;
+	selBeg, selEnd, temp: tPoint;
+	step: INTEGER;
+	frw: BOOLEAN;
+BEGIN
+	getSelect(text, selBeg, selEnd);
+	IF ((selBeg.Y > 0) & ~down OR (selEnd.Y < text.count - 1) & down) THEN
+		modify(text);
+		step := ORD(down)*2 - 1;
+		IF selBeg.Y # selEnd.Y THEN
+			frw := (text.cursor.X = selEnd.X) & (text.cursor.Y = selEnd.Y);
+
+			IF down # frw THEN
+				temp := text.cursor^;
+				SetPos(text, 0, text.select.Y);
+				setSelect(text);
+				text.select^ := temp
+			END;
+
+			ASSERT(selBeg.Y < selEnd.Y);
+
+			first := getLine(text, selBeg.Y);
+			last := getLine(text, selEnd.Y);
+
+			line := first;
+			Lines.modify(line);
+			REPEAT
+				NextLine(line);
+				Lines.modify(line)
+			UNTIL line = last;
+
+			IF down THEN
+				text.curLine := last.prev(tLine)
+			ELSE
+				text.curLine := first.next(tLine)
+			END;
+			selBeg.X := 0;
+			selEnd.X := last.length;
+			IF down THEN
+				last := last.next(tLine);
+				List._delete(text, last);
+				List._insert(text, first.prev, last)
+			ELSE
+				first := first.prev(tLine);
+				List._delete(text, first);
+				List._insert(text, last, first)
+			END;
+			IF down THEN
+				temp := selBeg;
+				selBeg := selEnd;
+				selEnd := temp;
+			END;
+			SetPos(text, selBeg.X, selBeg.Y + step);
+			setSelect(text);
+			text.select.X := selEnd.X;
+			text.select.Y := selEnd.Y + step
+		ELSE
+			first := getLine(text, selBeg.Y);
+			Lines.modify(first);
+			IF down THEN
+				last := first.next(tLine)
+			ELSE
+				last := first.prev.prev(tLine)
+			END;
+			List._delete(text, first);
+			List._insert(text, last, first);
+			INC(text.cursor.Y, step);
+			INC(text.select.Y, step);
+			SetPos(text, text.cursor.X, text.cursor.Y)
+		END
+	END
+END MoveLines;
+
+
+PROCEDURE isWordChar (c: WCHAR): BOOLEAN;
+    RETURN U.isLetter(c) OR U.isDigit(c) OR (c = "_")
+END isWordChar;
+
+
+PROCEDURE getSelectedText* (text: tText; VAR s: ARRAY OF WCHAR);
+VAR
+    n: INTEGER;
+    selBeg, selEnd: tPoint;
+BEGIN
+	s[0] := 0X;
+    IF selected(text) & (text.cursor.Y = text.select.Y) THEN
+        getSelect(text, selBeg, selEnd);
+        n := getString(text.curLine, selBeg.X, selEnd.X - selBeg.X, s)
+    END
+END getSelectedText;
+
+
+PROCEDURE wordSel* (text: tText);
+VAR
+    n, i, x1, x2: INTEGER;
+    selBeg, selEnd: tPoint;
+    str: tString;
+    curLine: tLine;
+BEGIN
+    curLine := text.curLine;
+    IF selected(text) & (text.cursor.Y = text.select.Y) THEN
+        getSelect(text, selBeg, selEnd);
+        x1 := selBeg.X;
+        x2 := selEnd.X;
+        n := getString(curLine, x1, x2 - x1, str);
+    ELSE
+        str := ""
+    END;
+    IF str # "" THEN
+        i := 0;
+        WHILE (i < n) & isWordChar(str[i]) DO
+            INC(i)
+        END;
+        IF (i # n) OR
+            ((x1 > 0) & isWordChar(Lines.getChar(curLine, x1 - 1))) OR
+            ((x2 < curLine.length) & isWordChar(Lines.getChar(curLine, x2))) THEN
+            str := ""
+        END
+    END;
+    IF text.searchText # str THEN
+    	text.smallMove := FALSE
+    END;
+    IF search(text, str, Lang.isCS(text.lang), TRUE) THEN END
+END wordSel;
+
+
+PROCEDURE getWordPos (line: tLine; pos: INTEGER): INTEGER;
+VAR
+	c: WCHAR;
+BEGIN
+	c := Lines.getChar(line, pos);
+	IF isWordChar(c) THEN
+		WHILE (pos < line.length) & isWordChar(Lines.getChar(line, pos)) DO
+			INC(pos)
+		END
+	ELSIF Lines.isSpace(c) THEN
+		WHILE (pos < line.length) & Lines.isSpace(Lines.getChar(line, pos)) DO
+			INC(pos)
+		END
+	ELSE
+		WHILE (pos < line.length) & ~Lines.isSpace(Lines.getChar(line, pos)) & ~isWordChar(Lines.getChar(line, pos)) DO
+			INC(pos)
+		END
+	END
+	RETURN pos
+END getWordPos;
+
+
+PROCEDURE key* (text: tText; code: INTEGER; shift, ctrl: BOOLEAN);
+VAR
+	n, wPos: INTEGER;
+	scrX, scrY: INTEGER;
+	resSel: BOOLEAN;
+BEGIN
+	resSel := FALSE;
+    IF shift THEN
+        setSelect(text)
+    ELSE
+        IF (33 <= code) & (code <= 40) THEN
+        	IF ~(((code = 38) OR (code = 40)) & ctrl) THEN
+        		resSel := selected(text);
+	            resetSelect(text)
+            END
+        END
+    END;
+
+    CASE code OF
+    |33:
+        IF ctrl THEN
+            UpDown(text, text.scroll.Y - text.cursor.Y)
+        ELSE
+            text.scroll.Y := MAX(text.scroll.Y - textsize.Y, 0);
+            UpDown(text, -textsize.Y)
+        END
+    |34:
+        IF ctrl THEN
+            UpDown(text, MIN(text.scroll.Y + textsize.Y - 1, text.count - 1) - text.cursor.Y)
+        ELSE
+            text.scroll.Y := MIN(text.scroll.Y + textsize.Y, text.count - 1);
+            UpDown(text, textsize.Y)
+        END
+    |35:
+        IF ctrl THEN
+            SetPos(text, text.last(tLine).length, text.count - 1)
+        ELSE
+            SetPos(text, text.curLine.length, text.cursor.Y)
+        END
+    |36:
+        IF ctrl THEN
+            SetPos(text, 0, 0)
+        ELSE
+        	n := leadingSpaces(text.curLine);
+        	IF text.cursor.X <= n THEN
+	            n := 0
+        	END;
+        	SetPos(text, n, text.cursor.Y)
+        END
+    |37:
+        IF (text.cursor.X = 0) & (text.curLine.prev # NIL) THEN
+            SetPos(text, text.curLine.prev(tLine).length, text.cursor.Y - 1)
+        ELSE
+        	scrX := text.scroll.X;
+        	scrY := text.scroll.Y;
+        	IF ctrl THEN
+        		wPos := 0;
+        		REPEAT
+        			n := wPos;
+        			wPos := getWordPos(text.curLine, wPos)
+        		UNTIL wPos >= text.cursor.X;
+				move(text, n - text.cursor.X)
+        	ELSE
+            	move(text, -1)
+            END;
+            text.smallMove := (scrX = text.scroll.X) & (scrY = text.scroll.Y) & ~resSel
+        END
+    |38:
+        IF ctrl THEN
+            MoveLines(text, FALSE)
+        ELSE
+            UpDown(text, -1)
+        END
+    |39:
+        IF (text.cursor.X = text.curLine.length) & (text.curLine.next # NIL) THEN
+            SetPos(text, 0, text.cursor.Y + 1)
+        ELSE
+        	scrX := text.scroll.X;
+        	scrY := text.scroll.Y;
+        	IF ctrl THEN
+				move(text, getWordPos(text.curLine, text.cursor.X) - text.cursor.X)
+        	ELSE
+            	move(text, 1)
+        	END;
+        	text.smallMove := (scrX = text.scroll.X) & (scrY = text.scroll.Y) & ~resSel
+        END
+    |40:
+        IF ctrl THEN
+            MoveLines(text, TRUE)
+        ELSE
+            UpDown(text, 1)
+        END
+    |46:
+        IF ctrl THEN
+            delLine(text)
+        ELSE
+        	IF ~selected(text) & (text.cursor.X < text.curLine.length) THEN
+        		INC(text.smallChange)
+        	END;
+            delete(text);
+            ShowCursor
+        END
+    |ORD("C"), ORD("X"):
+        IF ctrl THEN
+            IF selected(text) THEN
+                copy(text);
+                IF code = ORD("X") THEN
+                	delSelect(text)
+                END
+            END
+        END
+    |ORD("V"):
+        IF ctrl THEN
+            IF CB.available() THEN
+                paste(text)
+            END
+        END
+    |ORD("A"):
+        IF ctrl THEN
+            text.select2.X := 0;
+            text.select2.Y := 0;
+            text.select := text.select2;
+            SetPos(text, text.last(tLine).length, text.count - 1)
+        END
+    |ORD("L"), ORD("U"):
+        IF ctrl THEN
+        	IF selected(text) THEN
+            	chCase(text, code = ORD("U"))
+            ELSE
+            	changeCase(text, code = ORD("U"))
+            END;
+            ShowCursor
+        END
+    |ORD("D"):
+        IF ctrl THEN
+            dupLine(text)
+        END
+    ELSE
+    END
+END key;
+
+
+PROCEDURE mouse* (text: tText; x, y: INTEGER);
+VAR
+    cursorX: INTEGER;
+BEGIN
+    DEC(x, padding.left);
+    DEC(y, padding.top);
+    cursorX := (x*2) DIV charWidth;
+    SetPos(text, cursorX DIV 2 + cursorX MOD 2 + text.scroll.X, y DIV charHeight + text.scroll.Y)
+END mouse;
+
+
+PROCEDURE selectWord* (text: tText);
+VAR
+    cursorX, x1, x2: INTEGER;
+    line: tLine;
+BEGIN
+    resetSelect(text);
+    cursorX := text.cursor.X;
+    line := text.curLine;
+    x1 := cursorX - 1;
+    IF (cursorX < line.length) & isWordChar(Lines.getChar(line, cursorX)) THEN
+        x2 := cursorX;
+        WHILE (x2 < line.length) & isWordChar(Lines.getChar(line, x2)) DO
+            INC(x2)
+        END
+    ELSE
+        WHILE (x1 >= 0) & ~isWordChar(Lines.getChar(line, x1)) DO
+            DEC(x1)
+        END;
+        x2 := x1 + 1
+    END;
+    WHILE (x1 >= 0) & isWordChar(Lines.getChar(line, x1)) DO
+        DEC(x1)
+    END;
+    INC(x1);
+    IF x1 < x2 THEN
+        SetPos(text, x1, text.cursor.Y);
+        setSelect(text);
+        SetPos(text, x2, text.cursor.Y)
+    END
+END selectWord;
+
+
+PROCEDURE cursor* (text: tText);
+VAR
+    x, y1, y2, scrollX, scrollY: INTEGER;
+    cursor: pPoint;
+BEGIN
+	IF drawCursor THEN
+	    cursor := text.cursor;
+	    scrollX := text.scroll.X;
+	    scrollY := text.scroll.Y;
+	    IF ~((scrollY > cursor.Y) OR (scrollY + textsize.Y <= cursor.Y) OR
+	       (scrollX > cursor.X) OR (scrollX + textsize.X <= cursor.X)) THEN
+	        x := (cursor.X - scrollX)*charWidth + padding.left;
+	        y1 := (cursor.Y - scrollY)*charHeight + padding.top + (inter DIV 2 + 1);
+	        y2 := y1 + charHeight - (inter + 2);
+	        G.notVLine(canvas, x, y1, y2);
+	        G.notVLine(canvas, x - 1, y1, y2)
+	    END
+    END
+END cursor;
+
+
+PROCEDURE drawSelect (text: tText; line: tLine; selBeg, selEnd, y: INTEGER);
+VAR
+    Len, pos, x, firstCharIdx: INTEGER;
+BEGIN
+    firstCharIdx := MAX(text.scroll.X, selBeg);
+    Len := MAX(MIN(line.length - firstCharIdx, selEnd - firstCharIdx), 0);
+    Len := MIN(Len, textsize.X - pos + 1);
+    SetColor(colors.seltext, colors.selback);
+    pos := MAX((selBeg - text.scroll.X), 0);
+    x := pos*charWidth + padding.left;
+    G.SetColor(canvas, colors.selback);
+    G.FillRect(canvas, x - 2, y - inter DIV 2, x + 1 + Len*charWidth, y - inter DIV 2 + charHeight);
+    G.TextOut(canvas, pos*charWidth + padding.left, y, Lines.getPChar(line, firstCharIdx), Len, colors.seltext)
+END drawSelect;
+
+
+PROCEDURE mark (line: tLine; y: INTEGER);
+VAR
+    color, i: INTEGER;
+BEGIN
+    IF line.modified THEN
+        color := colors.modified
+    ELSIF line.saved THEN
+        color := colors.saved
+    ELSE
+        color := colors.back
+    END;
+    G.SetColor(canvas, color);
+
+    FOR i := 3 TO mark_width + 2 DO
+        G.VLine(canvas, padding.left - i, y, y + charHeight)
+    END
+END mark;
+
+
+PROCEDURE setPadding (left, top: INTEGER);
+BEGIN
+    padding.left := left;
+    padding.top := top;
+    textsize.X := (size.X - padding.left) DIV charWidth;
+    textsize.Y := (size.Y - padding.top) DIV charHeight;
+END setPadding;
+
+
+PROCEDURE draw* (text: tText);
+VAR
+    y, n, cnt, i, x: INTEGER;
+    line, firstLine, lastLine: tLine;
+    selBeg, selEnd: tPoint;
+    s: ARRAY 12 OF WCHAR;
+    backColor, numWidth, xNum, wNum: INTEGER;
+    p: Search.tPos;
+    guard: tGuard;
+BEGIN
+    IF text.comments THEN
+        Comments(text)
+    END;
+    IF text.search & search(text, text.searchText, text.cs, text.whole) THEN END;
+    IF text.guard THEN
+        NEW(guard);
+        List.append(ChangeLog.CL.Log, guard);
+        guard.saved := ChangeLog.isFirstGuard(guard);
+        text.edition := guard;
+        text.guard := FALSE
+    ELSE
+        guard := text.edition
+    END;
+
+    guard.cursor := text.cursor^;
+    guard.select2 := text.select2^;
+    guard.scroll := text.scroll;
+    guard.CurX := text.CurX;
+    guard.selected := text.select = text.select2;
+
+    G.SetColor(canvas, colors.back);
+    IF ~text.smallMove THEN
+    	G.clear(canvas)
+    END;
+    wNum := charWidth;
+    IF lineNumbers THEN
+        numWidth := U.lg10(text.count) + 2;
+        xNum := numWidth*wNum - wNum DIV 2;
+        setPadding(numWidth*wNum + pad_left, padding.top);
+    ELSE
+        setPadding(pad_left + wNum*2, padding.top)
+    END;
+    getSelect(text, selBeg, selEnd);
+    y := padding.top + inter DIV 2;
+    n := text.scroll.Y;
+    firstLine := getLine2(text, n);
+    IF text.smallMove THEN
+    	line := text.curLine;
+    	cnt := textsize.Y - 1;
+    	y := y + charHeight*(text.cursor.Y - text.scroll.Y);
+    	G.SetColor(canvas, colors.back);
+    	G.FillRect(canvas, padding.left - 2, y - inter DIV 2, size.X - 1, y - inter DIV 2 + charHeight);
+    	n := text.cursor.Y
+    ELSE
+	    line := firstLine;
+    	cnt := 0
+    END;
+
+    WHILE (line # NIL) & (cnt < textsize.Y) DO
+        backColor := colors.back;
+        IF (line = text.curLine) & ~selected(text) THEN
+            G.SetColor(canvas, colors.curline);
+            G.FillRect(canvas, padding.left - 2, y - inter DIV 2, size.X - 1, y - inter DIV 2 + charHeight);
+            backColor := colors.curline
+        END;
+        SetColor(colors.text, backColor);
+		IF (selBeg.Y < n) & (n < selEnd.Y) THEN
+			drawSelect(text, line, 0, line.length, y)
+		ELSE
+			G.TextOut(canvas, padding.left, y, Lines.getPChar(line, text.scroll.X), MIN(MAX(line.length - text.scroll.X, 0), textsize.X + 1), colors.delim);
+			IF text.lang # Lang.langText THEN
+				parse(text, line, y, backColor, text.lang)
+			END
+		END;
+		IF (selBeg.Y = n) & (selEnd.Y = n) & (selBeg.X # selEnd.X) THEN
+            drawSelect(text, line, selBeg.X, selEnd.X, y)
+        ELSIF (selBeg.Y = n) & (selEnd.Y # n) THEN
+            drawSelect(text, line, selBeg.X, line.length, y)
+        ELSIF (selBeg.Y # n) & (selEnd.Y = n) THEN
+            drawSelect(text, line, 0, selEnd.X, y)
+        END;
+        mark(line, y - inter DIV 2);
+        NextLine(line);
+        INC(y, charHeight);
+        INC(n);
+        INC(cnt)
+    END;
+
+    G.SetColor(canvas, colors.numback);
+    G.FillRect(canvas, 0, 0, padding.left - pad_left (*+ 1*), size.Y - 1);
+    line := firstLine;
+    SetColor(colors.numtext, colors.numback);
+    y := padding.top + inter DIV 2;
+    n := MIN(text.scroll.Y + textsize.Y, text.count);
+    FOR i := text.scroll.Y + 1 TO n DO
+        IF lineNumbers THEN
+            IF (i MOD 10 = 0) OR (i - 1 = text.cursor.Y) OR line.label THEN
+                U.int2str(i, s);
+                G.TextOut2(canvas, (numWidth - U.lg10(i) - 1)*wNum - wNum DIV 2, y, s, LENGTH(s))
+            ELSE
+                G.SetColor(canvas, colors.numtext);
+                G.HLine(canvas, y - inter DIV 2 + charHeight DIV 2, xNum - wNum DIV (1 + ORD(i MOD 5 # 0)), xNum)
+            END
+        END;
+        IF line.label THEN
+            FOR x := wNum DIV 2 TO (padding.left - pad_left) - wNum DIV 2 DO
+                G.notVLine(canvas, x, y, y + charHeight - inter);
+                G.xorVLine(canvas, x, y, y + charHeight - inter)
+            END
+        END;
+        NextLine(line);
+        INC(y, charHeight)
+    END;
+
+    IF text.searchText # "" THEN
+    	IF text.smallMove THEN
+    		firstLine := text.curLine;
+    		lastLine := firstLine
+    	ELSE
+    	    lastLine := getLine2(text, MIN(text.scroll.Y + textsize.Y, text.count) - 1)
+        END;
+        p := text.foundList.first(Search.tPos);
+        WHILE p # NIL DO
+        	y := padding.top + inter DIV 2;
+        	IF text.smallMove THEN
+        		y := y + charHeight*(text.cursor.Y - text.scroll.Y)
+            END;
+            IF (firstLine.pos <= p.pos) & (p.pos <= lastLine.pos + lastLine.length) THEN
+                line := firstLine;
+                WHILE (line.pos <= p.pos) & (line # lastLine) DO
+                    NextLine(line);
+                    INC(y, charHeight)
+                END;
+                IF (line # lastLine) & (line # firstLine) OR (line = lastLine) & (line.pos > p.pos) THEN
+                    PrevLine(line);
+                    DEC(y, charHeight)
+                END;
+                x := (p.pos - line.pos - text.scroll.X)*charWidth + padding.left;
+                n := LENGTH(text.searchText)*charWidth;
+                WHILE n > 0 DO
+                    IF x >= padding.left THEN
+                        G.notVLine(canvas, x, y, y + charHeight - inter)
+                    END;
+                    INC(x);
+                    DEC(n)
+                END
+            END;
+            p := p.next(Search.tPos)
+        END
+    END;
+
+    text.smallMove := FALSE;
+
+    IF text.foundSel > 0 THEN
+        x := (text.cursor.X - text.scroll.X)*charWidth + padding.left;
+        y := (text.cursor.Y - text.scroll.Y)*charHeight + padding.top + inter DIV 2;
+        n := text.foundSel*charWidth;
+        WHILE n > 0 DO
+            IF x >= padding.left THEN
+                G.xorVLine(canvas, x, y, y + charHeight - inter)
+            END;
+            INC(x);
+            DEC(n)
+        END
+    END;
+	cursor(text)
+END draw;
+
+
+PROCEDURE switch* (text: tText);
+BEGIN
+    ChangeLog.set(text.chLog);
+    Lines.setMaxLength(text.maxLength);
+    Lang.setCurLang(text.lang)
+END switch;
+
+
+PROCEDURE create (fileName: RW.tFileName): tText;
+VAR
+    text: tText;
+BEGIN
+    NEW(text);
+    text.maxLength := 64;
+    text.chLog := ChangeLog.create(text.maxLength);
+    NEW(text.cursor);
+    NEW(text.select2);
+    text.cursor.X := 0;
+    text.cursor.Y := 0;
+    resetSelect(text);
+    text.scroll.X := 0;
+    text.scroll.Y := 0;
+    setPadding(padding.left, padding.top);
+    text.curLine := NIL;
+    text.modified := FALSE;
+    text.smallMove := FALSE;
+    text.comments := TRUE;
+    text.search := TRUE;
+    text.cs := FALSE;
+    text.whole := FALSE;
+    text.guard := TRUE;
+    text.edition := NIL;
+    text.foundList := List.create(NIL);
+    text.searchText := "";
+    text.foundSel := 0;
+    text.CurX := -1;
+    text.smallChange := 0;
+    text.lang := Lang.langText;
+    text.LinesVector := NIL;
+    Lang.setCurLang(Lang.langText);
+    setName(text, fileName);
+    ASSERT(text = List.create(text))
+    RETURN text
+END create;
+
+
+PROCEDURE setColors* (text, back, seltext, selback, modified, saved, curline, numtext, numback,
+                        comment, string, escape, num, delim, key1, key2, key3: INTEGER);
+BEGIN
+    colors.text := text;
+    colors.back := back;
+    colors.seltext := seltext;
+    colors.selback := selback;
+    colors.modified := modified;
+    colors.saved := saved;
+    colors.curline := curline;
+    colors.numtext := numtext;
+    colors.numback := numback;
+    colors.comment := comment;
+    colors.string  := string;
+    colors.escape  := escape;
+    colors.num := num;
+    colors.delim := delim;
+    colors.key1 := key1;
+    colors.key2 := key2;
+    colors.key3 := key3;
+END setColors;
+
+
+PROCEDURE setCanvas* (_canvas: G.tCanvas);
+BEGIN
+    canvas := _canvas;
+    charWidth := _canvas.font.width;
+    charHeight := _canvas.font.height + inter
+END setCanvas;
+
+
+PROCEDURE resize* (width, height: INTEGER);
+BEGIN
+    size.X := width;
+    size.Y := height;
+    setPadding(padding.left, padding.top)
+END resize;
+
+
+PROCEDURE destroy* (VAR text: tText);
+BEGIN
+    IF search(text, "", FALSE, FALSE) THEN END;
+    ChangeLog.destroy(text.chLog);
+    Lines.destroyVector(text.LinesVector);
+    DISPOSE(text.foundList);
+    DISPOSE(text.cursor);
+    DISPOSE(text.select2);
+    DISPOSE(text)
+END destroy;
+
+
+PROCEDURE open* (name: RW.tFileName; ptr, size: INTEGER; VAR errno: INTEGER): tText;
+VAR
+    text: tText;
+    file: RW.tInput;
+    n, enc, eol: INTEGER;
+    _eol: BOOLEAN;
+    line: tLine;
+BEGIN
+    errno := 0;
+    text := create(name);
+    IF text # NIL THEN
+    	IF ptr = 0 THEN
+    		file := RW.loadFromFile(name, enc, eol)
+    	ELSE
+    		file := RW.loadFromMem(ptr, size, enc, eol)
+    	END;
+    	IF file = NIL THEN
+    		destroy(text)
+    	END
+    ELSE
+    	file := NIL
+    END;
+    IF file # NIL THEN
+        ChangeLog.changeInt(text.enc, enc);
+        ChangeLog.changeInt(text.eol, eol);
+        text.enc := enc;
+        text.eol := eol;
+        line := Lines.create(FALSE);
+        List._append(text, line);
+        REPEAT
+            n := RW.getString(file, line, Lines.tabs, _eol);
+            IF _eol THEN
+            	line := Lines.create(FALSE);
+            	List._append(text, line)
+            END
+        UNTIL ~_eol;
+        RW.destroy(file);
+        text.curLine := text.first(tLine);
+        SetPos(text, 0, 0);
+        resetSelect(text);
+        Comments(text)
+    ELSE
+        errno := 1
+    END
+    RETURN text
+END open;
+
+
+PROCEDURE findNext* (text: tText; prev: BOOLEAN): BOOLEAN;
+VAR
+    cursorPos, x, y, X, Y, Len: INTEGER;
+    p: Search.tPos;
+    line: tLine;
+    res: BOOLEAN;
+BEGIN
+    X := text.cursor.X;
+    Y := text.cursor.Y;
+    text.cursor.X := MIN(text.cursor.X, text.curLine.length);
+    cursorPos := text.curLine.pos + text.cursor.X - ORD(prev) - ORD(~prev & (text.foundSel = 0));
+    p := text.foundList.first(Search.tPos);
+    WHILE (p # NIL) & (p.pos <= cursorPos) DO
+        p := p.next(Search.tPos)
+    END;
+    IF prev THEN
+        IF p = NIL THEN
+            p := text.foundList.last(Search.tPos)
+        ELSE
+            p := p.prev(Search.tPos)
+        END
+    END;
+    res := p # NIL;
+    IF res THEN
+        y := 0;
+        line := text.first(tLine);
+        WHILE (line.pos <= p.pos) & (line.next # NIL) DO
+            NextLine(line);
+            INC(y)
+        END;
+        IF (line.next # NIL) OR (line.pos > p.pos) THEN
+            PrevLine(line);
+            DEC(y)
+        END;
+        resetSelect(text);
+        searchScroll(text, y);
+        x := p.pos - line.pos;
+        Len := LENGTH(text.searchText);
+        IF x + Len > text.scroll.X + textsize.X THEN
+            text.scroll.X := MAX(x + Len - textsize.X + 3, 0)
+        ELSIF x < text.scroll.X THEN
+            text.scroll.X := MAX(x - 3, 0)
+        END;
+        SetPos(text, x, y);
+        text.foundSel := Len
+    ELSE
+        SetPos(text, X, Y)
+    END
+    RETURN res
+END findNext;
+
+
+PROCEDURE replace* (text: tText; s: ARRAY OF WCHAR; n: INTEGER);
+VAR
+    line: tLine;
+    sLen, i: INTEGER;
+BEGIN
+    IF text.foundSel > 0 THEN
+        line := text.curLine;
+        sLen := LENGTH(s);
+        i := text.cursor.X;
+        IF sLen > n THEN
+            Lines.insert3(line, i, sLen - n)
+        ELSIF n > sLen THEN
+            Lines.delCharN(line, i, n - sLen)
+        ELSE (* n = sLen *)
+        	Lines.copy(line)
+        END;
+        SetPos(text, i + sLen, text.cursor.Y);
+	    WHILE sLen > 0 DO
+	        DEC(sLen);
+	        Lines.setChar(line, i + sLen, s[sLen])
+	    END;
+        resetSelect(text);
+        Lines.modify(line);
+        modify(text)
+    END
+END replace;
+
+
+PROCEDURE replaceAll* (text: tText; s: ARRAY OF WCHAR; n: INTEGER): INTEGER;
+VAR
+    p: Search.tPos;
+    line: tLine;
+    y, k, d, pos, y0: INTEGER;
+BEGIN
+    resetSelect(text);
+    SetPos(text, 0, 0);
+    line := text.first(tLine);
+    y := 0;
+    y0 := -1;
+    k := 0;
+    d := LENGTH(s) - n;
+    p := text.foundList.first(Search.tPos);
+    WHILE p # NIL DO
+        pos := p.pos;
+        WHILE (line.pos <= pos) & (line.next # NIL) DO
+            NextLine(line);
+            INC(y)
+        END;
+        IF (line.next # NIL) OR (line.pos > pos) THEN
+            PrevLine(line);
+            DEC(y)
+        END;
+        IF y = y0 THEN
+            INC(k, d)
+        ELSE
+            k := 0;
+            y0 := y
+        END;
+        SetPos(text, pos - line.pos + k, y);
+        text.foundSel := n;
+        replace(text, s, n);
+        p := p.next(Search.tPos)
+    END
+    RETURN text.foundList.count
+END replaceAll;
+
+
+PROCEDURE conv (VAR c: WCHAR; cp: E.CP; enc: INTEGER): BOOLEAN;
+VAR
+	code: INTEGER;
+	res: BOOLEAN;
+BEGIN
+	res := FALSE;
+	IF (c # 0X) & (c # Lines.NUL) & (c # Lines.TAB1) THEN
+		code := E.UNI[ORD(c), enc];
+		IF (0 <= code) & (code <= 255) THEN
+			code := cp[code]
+		ELSE
+			code := ORD(c)
+		END;
+		IF code # ORD(c) THEN
+			c := WCHR(code);
+			res := TRUE
+		END
+	END
+	RETURN res
+END conv;
+
+
+PROCEDURE conv1251to866 (VAR c: WCHAR): BOOLEAN;
+	RETURN conv(c, E.cp866, E.CP1251)
+END conv1251to866;
+
+
+PROCEDURE conv866to1251 (VAR c: WCHAR): BOOLEAN;
+	RETURN conv(c, E.cp1251, E.CP866)
+END conv866to1251;
+
+
+PROCEDURE convert* (text: tText; (*cp: E.CP;*) enc: INTEGER);
+VAR
+	line: tLine;
+	func: Lines.fConvert;
+	modified: BOOLEAN;
+BEGIN
+	modified := FALSE;
+	line := text.first(tLine);
+	IF enc = E.CP866 THEN
+		func := conv866to1251
+	ELSIF enc = E.CP1251 THEN
+		func := conv1251to866
+	ELSE
+		line := NIL
+	END;
+
+	WHILE line # NIL DO
+		IF Lines.convert(line, 0, line.length - 1, func) THEN
+			modified := TRUE
+		END;
+		NextLine(line)
+	END;
+
+	IF modified THEN
+		modify(text)
+	END
+END convert;
+
+
+PROCEDURE New* (): tText;
+VAR
+    text: tText;
+BEGIN
+    text := create("");
+    List._append(text, Lines.create(FALSE));
+    text.curLine := text.first(tLine);
+    ChangeLog.changeInt(text.enc, E.CP866);
+    ChangeLog.changeInt(text.eol, E.EOL_CRLF);
+    text.enc := E.CP866;
+    text.eol := E.EOL_CRLF;
+    SetPos(text, 0, 0);
+    resetSelect(text)
+    RETURN text
+END New;
+
+
+PROCEDURE empty* (text: tText): BOOLEAN;
+	RETURN (text.count = 1) & (text.curLine.length = 0)
+END empty;
+
+
+PROCEDURE init* (pShowCursor: tProcedure; _lineNumbers, _autoIndents, _autoBrackets, _trimSpace: BOOLEAN);
+BEGIN
+    ShowCursor := pShowCursor;
+    pdelete := delete;
+    drawCursor := TRUE;
+    lineNumbers := _lineNumbers;
+    autoIndents := _autoIndents;
+    autoBrackets := _autoBrackets;
+    trimSpace := _trimSpace;
+    padding.left := pad_left;
+    padding.top := pad_top;
+END init;
+
+
+END Text.

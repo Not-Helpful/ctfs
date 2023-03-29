@@ -1,0 +1,107 @@
+﻿(*
+    Copyright 2016, 2017, 2020-2022 Anton Krotov
+
+    This file is part of CEdit.
+
+    CEdit is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    CEdit is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with CEdit. If not, see <http://www.gnu.org/licenses/>.
+*)
+
+MODULE EditBox;
+
+IMPORT SYSTEM, KOSAPI, Encodings;
+
+CONST
+
+	MAX_LENGTH = 1024;
+
+
+TYPE
+
+	tEditBox* = RECORD
+		width*,
+		left*,
+		top*,
+		color*,
+		shift_color,
+		focus_border_color,
+		blur_border_color,
+		text_color*,
+		max: INTEGER;
+		text*: INTEGER;
+		mouse_variable: INTEGER;
+		flags*: SET;
+
+		size,
+		pos: INTEGER;
+		(* The following struct members are not used by the users of API *)
+		offset, cl_curs_x, cl_curs_y, shift, shift_old, height, char_width: INTEGER
+	END;
+
+
+PROCEDURE [stdcall, "box_lib.obj", "edit_box_draw"]     draw* (eb: tEditBox); END;
+PROCEDURE [stdcall, "box_lib.obj", "edit_box_mouse"]    mouse* (eb: tEditBox); END;
+PROCEDURE [stdcall, "box_lib.obj", "edit_box_set_text"] set_text (eb: tEditBox; text: INTEGER); END;
+PROCEDURE [stdcall, "box_lib.obj", "edit_box_key_safe"] key* (eb: tEditBox; key: INTEGER); END;
+
+PROCEDURE get* (text: tEditBox; VAR str: ARRAY OF CHAR);
+VAR
+	ptr, max, i: INTEGER;
+BEGIN
+	ptr := text.text;
+	max := text.max;
+	ASSERT(max < LEN(str));
+	i := 0;
+	REPEAT
+		SYSTEM.GET(ptr, str[i]);
+		INC(i);
+		INC(ptr)
+	UNTIL (str[i - 1] = 0X) OR (i = max);
+	str[i] := 0X
+END get;
+
+
+PROCEDURE set* (text: tEditBox; str: ARRAY OF WCHAR);
+VAR
+	i: INTEGER;
+	temp: ARRAY MAX_LENGTH OF CHAR;
+BEGIN
+	ASSERT(LENGTH(str) < LEN(temp));
+	i := 0;
+	REPEAT
+		temp[i] := CHR(Encodings.UNI[ORD(str[i]), Encodings.CP866] MOD 256);
+		INC(i)
+	UNTIL str[i - 1] = 0X;
+	set_text(text, SYSTEM.ADR(temp[0]))
+END set;
+
+
+PROCEDURE create* (x, y, width, max_chars: INTEGER; VAR editbox: tEditBox);
+BEGIN
+	editbox.width := width;
+	editbox.left := x;
+	editbox.top := y;
+	editbox.color := 0FFFFFFH;
+	editbox.shift_color := 06A9480H;
+	editbox.focus_border_color := 0;
+	editbox.blur_border_color := 06A9480H;
+	editbox.text_color := 30000000H;
+	editbox.max := max_chars;
+	editbox.text := KOSAPI.malloc(max_chars + 2);
+	ASSERT(editbox.text # 0);
+	editbox.mouse_variable := 0;
+	editbox.flags := {14}
+END create;
+
+
+END EditBox.
